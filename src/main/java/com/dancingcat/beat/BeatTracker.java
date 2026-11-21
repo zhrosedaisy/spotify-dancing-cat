@@ -1,19 +1,19 @@
 package com.dancingcat.beat;
 
 /**
- * Canlı sesten ritim takibi.
+ * Beat tracking from live audio.
  *
- * 1. Onset (vuruş belirtisi): ses 10 ms'lik karelere bölünür, her karenin frekans spektrumu
- *    (FFT) bir öncekiyle karşılaştırılır. Enerji aniden artıyorsa (davul, bas) değer yüksek olur.
- *    Kick davulu için alçak frekanslara ekstra ağırlık verilir.
- * 2. Tempo: son 8 saniyenin onset eğrisinin otokorelasyonu alınır; eğrinin kendini en çok
- *    tekrar ettiği aralık = vuruş aralığı. 120 BPM civarı hafifçe tercih edilir.
- * 3. Faz: bu aralıkla dizilmiş "tarak", onset eğrisi üzerinde kaydırılır; en çok örtüştüğü
- *    yer vuruşların tam zamanıdır.
- * 4. Kedinin kullandığı vuruş sayacı bu tahminlere yavaşça yaklaştırılır (asla geri gitmez),
- *    böylece dans takılmadan ritme oturur.
+ * 1. Onsets: the audio is split into 10 ms frames and each frame's spectrum (FFT) is compared
+ *    with the previous one. A sudden rise in energy (drums, bass) gives a high value.
+ *    The kick-drum range gets extra weight.
+ * 2. Tempo: the onset curve of the last 8 seconds is autocorrelated; the lag at which the curve
+ *    repeats itself most is the beat period. Tempos around 120 BPM are slightly preferred.
+ * 3. Phase: a "comb" with that period is slid across the onset curve; where it lines up best is
+ *    where the beats are.
+ * 4. The beat counter the cat uses is nudged toward these estimates gradually (it never runs
+ *    backwards), so the dance locks onto the rhythm without stuttering.
  *
- * Ses yoksa / sessizse / kilitlenemediyse yedek (sabit tempo) kaynağa düşer.
+ * Without audio / when silent / before locking on, it falls back to the fixed-tempo source.
  */
 public final class BeatTracker implements BeatSource {
 
@@ -22,8 +22,8 @@ public final class BeatTracker implements BeatSource {
     private static final int FFT_SIZE = 1024;
     private static final double FPS = (double) SAMPLE_RATE / HOP;
     private static final int HISTORY = 800;        // 8 saniye
-    private static final int MIN_FRAMES = 300;     // tahmin için en az 3 saniye
-    private static final int ESTIMATE_EVERY = 25;  // her 0,25 sn'de bir yeniden tahmin
+    private static final int MIN_FRAMES = 300;     // need at least 3 seconds before estimating
+    private static final int ESTIMATE_EVERY = 25;  // re-estimate every 0.25 s
     private static final double MIN_BPM = 70, MAX_BPM = 190;
     private static final long SILENCE_NS = 2_000_000_000L;
 
@@ -38,7 +38,7 @@ public final class BeatTracker implements BeatSource {
     private final double[] onset = new double[HISTORY];
     private final long[] onsetTime = new long[HISTORY];
     private long frameCount;
-    private int filled;                            // son analizden beri kaç yeni örnek geldi
+    private int filled;                            // new samples since the last analysis
     private int ringPos;
     private long samplesReceived;
 
@@ -50,9 +50,9 @@ public final class BeatTracker implements BeatSource {
     private volatile long lastLoudNanos;
     private volatile long lastAudioNanos;
 
-    // Enerji / ruh hali / drop (sadece ses iş parçacığı yazar)
-    private static final int DROP_SHORT = 25;      // 0,25 sn
-    private static final int DROP_LONG = 400;      // önceki 4 sn
+    // Energy / mood / drop (written by the audio thread only)
+    private static final int DROP_SHORT = 25;      // 0.25 s
+    private static final int DROP_LONG = 400;      // the 4 s before that
     private static final long DROP_COOLDOWN_NS = 12_000_000_000L;
     private static final long MOOD_HOLD_NS = 3_000_000_000L;
     private final double[] rmsHistory = new double[HISTORY];
@@ -63,7 +63,7 @@ public final class BeatTracker implements BeatSource {
     private long moodCandidateSince;
     private volatile Runnable onDrop = () -> { };
 
-    // Kedinin gördüğü vuruş sayacı (this ile korunur)
+    // The beat counter the cat sees (guarded by this)
     private double anchorBeat;
     private long anchorNanos = System.nanoTime();
     private double periodNanos = 500_000_000;
@@ -74,23 +74,23 @@ public final class BeatTracker implements BeatSource {
         for (int i = 0; i < FFT_SIZE; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (FFT_SIZE - 1));
     }
 
-    /** Canlı ritim şu an kullanılıyor mu? */
+    /** Is the live beat currently being used? */
     public boolean isLive() {
         long now = System.nanoTime();
         return locked && now - lastAudioNanos < SILENCE_NS && now - lastLoudNanos < SILENCE_NS;
     }
 
-    /** Şarkının ruh hali (canlı ritim yoksa GROOVE). */
+    /** The song's mood (GROOVE when there is no live beat). */
     public Mood mood() {
         return isLive() ? mood : Mood.GROOVE;
     }
 
-    /** Drop (ani enerji patlaması) algılanınca çağrılır — ses iş parçacığından! */
+    /** Called when a drop (sudden burst of energy) is detected — from the audio thread! */
     public void setOnDrop(Runnable onDrop) {
         this.onDrop = onDrop;
     }
 
-    /** Tahmin edilen tempo (canlı değilse -1). */
+    /** Estimated tempo (-1 when not live). */
     public double bpm() {
         return isLive() ? 60e9 / periodNanos : -1;
     }
@@ -101,7 +101,7 @@ public final class BeatTracker implements BeatSource {
     public synchronized double beatPosition(long nowMillis) {
         if (!isLive()) return fallback.beatPosition(nowMillis);
         double p = rawBeat(System.nanoTime());
-        p = Math.max(p, lastReturned); // asla geri gitme
+        p = Math.max(p, lastReturned); // never go backwards
         lastReturned = p;
         return p;
     }
@@ -110,18 +110,18 @@ public final class BeatTracker implements BeatSource {
         return anchorBeat + (nanos - anchorNanos) / periodNanos;
     }
 
-    // ---------------------------------------------------------------- ses girişi
+    // ---------------------------------------------------------------- audio input
 
     /**
-     * Ses örneklerini işler. arrivalNanos: son örneğin ulaştığı an (System.nanoTime).
-     * Tek bir iş parçacığından çağrılmalı.
+     * Processes audio samples. arrivalNanos: when the last sample arrived (System.nanoTime).
+     * Must be called from a single thread.
      */
     public void process(float[] samples, int count, long arrivalNanos) {
         lastAudioNanos = arrivalNanos;
         long firstSampleIndex = samplesReceived;
         samplesReceived += count;
         for (int i = 0; i < count; i++) {
-            // Halka tampon: frame[] son FFT_SIZE örneği tutar, ringPos en eski örneği gösterir
+            // Ring buffer: frame[] holds the last FFT_SIZE samples, ringPos points at the oldest one
             frame[ringPos] = samples[i];
             ringPos = (ringPos + 1) % FFT_SIZE;
             if (++filled >= HOP) {
@@ -136,7 +136,7 @@ public final class BeatTracker implements BeatSource {
     private void analyzeFrame(long nanos) {
         double energy = 0;
         for (int i = 0; i < FFT_SIZE; i++) {
-            double s = frame[(ringPos + i) % FFT_SIZE]; // en eskiden en yeniye
+            double s = frame[(ringPos + i) % FFT_SIZE]; // oldest to newest
             re[i] = s * hann[i];
             im[i] = 0;
             energy += s * s;
@@ -144,8 +144,9 @@ public final class BeatTracker implements BeatSource {
         if (Math.sqrt(energy / FFT_SIZE) > 0.002) lastLoudNanos = nanos;
 
         fft.transform(re, im);
-        // Bas (~40-260 Hz: kick) ve geri kalan bantların artışını ayrı ayrı ortala.
-        // Toplasaydık geniş bantlı hi-hat'ler (yüzlerce frekans) kick'i bastırır, kedi ara vuruşlara kilitlenirdi.
+        // Average the rise of the bass band (~40-260 Hz: kick) and of the other bands separately.
+        // If we just summed them, broadband hi-hats (hundreds of bins) would drown out the kick
+        // and the cat would lock onto the off-beats.
         double lowFlux = 0, highFlux = 0;
         int lowBins = 0, highBins = 0;
         for (int k = 1; k < FFT_SIZE / 2; k++) {
@@ -166,11 +167,11 @@ public final class BeatTracker implements BeatSource {
         if (frameCount >= MIN_FRAMES && frameCount % ESTIMATE_EVERY == 0) estimate();
     }
 
-    // ---------------------------------------------------------------- enerji, ruh hali, drop
+    // ---------------------------------------------------------------- energy, mood, drop
 
     private void updateEnergy(double rms, double flux, long nanos) {
-        // Ses seviyesinden bağımsız olsun diye her şey şarkının şimdiye kadarki tepe değerine göre ölçülür.
-        // Tepe değerler yavaşça söner (~dakikada %95), böylece şarkı değişince uyum sağlar.
+        // To be independent of the volume, everything is measured relative to the song's peak so far.
+        // Peaks decay slowly (~95% per minute) so they adapt when the song changes.
         loudShort += (rms - loudShort) / 30;
         punch += (flux - punch) / 150;
         peakLoud = Math.max(peakLoud * 0.9995, loudShort);
@@ -181,9 +182,9 @@ public final class BeatTracker implements BeatSource {
     }
 
     private void updateMood(long nanos) {
-        // Göreli (şarkının kendi tepesine göre) + mutlak ses seviyesi. Sadece göreliye bakarsak
-        // şarkının sakin girişi de "en yüksek an" sanılır. Spotify sesi normalize ettiği için
-        // mutlak seviye de güvenilir bir ipucu (~0.12 RMS = gerçekten gür).
+        // Relative (to the song's own peak) + absolute loudness. With only the relative part, a
+        // song's quiet intro would look like its loudest moment. Spotify normalizes loudness, so
+        // the absolute level is a reliable hint too (~0.12 RMS = really loud).
         double absolute = Math.min(1, loudShort / 0.12);
         double intensity = 0.35 * (loudShort / peakLoud) + 0.25 * (punch / peakPunch) + 0.4 * absolute;
         double bpm = 60e9 / periodNanos;
@@ -191,7 +192,7 @@ public final class BeatTracker implements BeatSource {
         if (intensity > 0.78 && bpm >= 108) m = Mood.HYPE;
         else if (intensity < 0.5 || bpm < 88) m = Mood.CHILL;
         else m = Mood.GROOVE;
-        // Ruh hali 3 sn boyunca aynı kalırsa değiştir (sürekli gidip gelmesin)
+        // Only switch mood after it has been stable for 3 s (so it doesn't flip back and forth)
         if (m != moodCandidate) {
             moodCandidate = m;
             moodCandidateSince = nanos;
@@ -200,11 +201,11 @@ public final class BeatTracker implements BeatSource {
         }
     }
 
-    /** Son 0,25 sn'nin ses seviyesi, önceki 4 sn'nin ~2 katıysa ve şarkının tepesine yakınsa: drop! */
+    /** If the last 0.25 s is ~2x louder than the 4 s before and close to the song's peak: drop! */
     private void detectDrop(long nanos) {
         double recent = averageRms(0, DROP_SHORT);
         double before = averageRms(DROP_SHORT, DROP_SHORT + DROP_LONG);
-        boolean wasPlaying = before > 0.08 * peakLoud;   // sessizlikten başlayan şarkı drop sayılmaz
+        boolean wasPlaying = before > 0.08 * peakLoud;   // a song starting from silence is not a drop
         boolean bigJump = recent > 1.9 * before && recent > 0.6 * peakLoud;
         if (wasPlaying && bigJump && nanos - lastDropNanos > DROP_COOLDOWN_NS && locked) {
             lastDropNanos = nanos;
@@ -215,14 +216,14 @@ public final class BeatTracker implements BeatSource {
         }
     }
 
-    /** Son kareden geriye [from, to) aralığındaki karelerin ortalama ses seviyesi. */
+    /** Average loudness of frames [from, to) counting back from the latest frame. */
     private double averageRms(int from, int to) {
         double sum = 0;
         for (int i = from; i < to; i++) sum += rmsHistory[(int) ((frameCount - 1 - i) % HISTORY)];
         return sum / (to - from);
     }
 
-    // ---------------------------------------------------------------- tahmin
+    // ---------------------------------------------------------------- estimation
 
     private void estimate() {
         int n = (int) Math.min(frameCount, HISTORY);
@@ -235,7 +236,7 @@ public final class BeatTracker implements BeatSource {
         }
         double[] env = normalize(o);
 
-        // --- Tempo: otokorelasyon
+        // --- Tempo: autocorrelation
         int minLag = (int) Math.floor(FPS * 60 / MAX_BPM);
         int maxLag = (int) Math.ceil(FPS * 60 / MIN_BPM);
         double ac0 = autocorr(env, 0);
@@ -244,7 +245,7 @@ public final class BeatTracker implements BeatSource {
         int best = -1;
         for (int lag = minLag; lag <= maxLag + 1; lag++) {
             double ac = autocorr(env, lag);
-            if (2 * lag < n / 2) ac += 0.5 * autocorr(env, 2 * lag); // iki vuruş sonrası da uymalı
+            if (2 * lag < n / 2) ac += 0.5 * autocorr(env, 2 * lag); // two beats later should match too
             double bpm = FPS * 60 / lag;
             double octave = Math.log(bpm / 120) / Math.log(2);
             score[lag] = ac * Math.exp(-0.5 * (octave / 0.9) * (octave / 0.9));
@@ -253,7 +254,7 @@ public final class BeatTracker implements BeatSource {
         double confidence = autocorr(env, best) / ac0;
         if (confidence < 0.08) { locked = false; return; }
 
-        // Parabolik düzeltme: tam sayı olmayan aralığı bul
+        // Parabolic interpolation: find the fractional period
         double period = best;
         if (best > minLag && best < maxLag) {
             double a = score[best - 1], b = score[best], c = score[best + 1];
@@ -262,7 +263,7 @@ public final class BeatTracker implements BeatSource {
         }
         updatePeriod(period);
 
-        // --- Faz: tarak eşleştirme
+        // --- Phase: comb matching
         double p = periodFrames;
         double bestScore = -1;
         int bestPhase = 0;
@@ -270,7 +271,7 @@ public final class BeatTracker implements BeatSource {
             double s = 0, w = 1;
             for (double pos = n - 1 - phase; pos >= 1; pos -= p) {
                 s += w * interp(env, pos);
-                w *= 0.92; // eski vuruşlar daha az önemli
+                w *= 0.92; // older beats matter less
             }
             if (s > bestScore) {
                 bestScore = s;
@@ -282,7 +283,7 @@ public final class BeatTracker implements BeatSource {
         locked = true;
     }
 
-    /** Tempo ani değişmesin: yakın tahminleri ortala, uzak olanlar 3 kez üst üste gelirse geç. */
+    /** Keep the tempo stable: average close estimates, switch to a different one only after 3 votes in a row. */
     private void updatePeriod(double period) {
         if (Math.abs(period / periodFrames - 1) < 0.05) {
             periodFrames = 0.8 * periodFrames + 0.2 * period;
@@ -295,14 +296,14 @@ public final class BeatTracker implements BeatSource {
         } else {
             candidatePeriod = period;
             candidateVotes = 1;
-            if (!locked) periodFrames = period; // ilk kilitlenmede bekleme
+            if (!locked) periodFrames = period; // don't wait on the first lock
         }
     }
 
-    /** Vuruş sayacını bulunan faza ve tempoya doğru yumuşakça çeker. */
+    /** Gently pulls the beat counter toward the detected phase and tempo. */
     private synchronized void correctClock(long lastBeatNanos, double newPeriodNanos) {
         long now = System.nanoTime();
-        if (!locked) { // ilk kilitlenme: sayacı doğrudan hizala, kaldığı yerden devam
+        if (!locked) { // first lock: align the counter directly, continuing from where it was
             double base = Math.floor(Math.max(lastReturned, fallback.beatPosition(System.currentTimeMillis())));
             periodNanos = newPeriodNanos;
             anchorBeat = base + 1 + (now - lastBeatNanos) / periodNanos;
@@ -310,16 +311,16 @@ public final class BeatTracker implements BeatSource {
             return;
         }
         double atBeat = rawBeat(lastBeatNanos);
-        double error = Math.rint(atBeat) - atBeat; // -0.5..0.5 vuruş
+        double error = Math.rint(atBeat) - atBeat; // -0.5..0.5 beats
         double current = rawBeat(now);
         periodNanos = newPeriodNanos;
         anchorBeat = current + error * 0.35;
         anchorNanos = now;
     }
 
-    // ---------------------------------------------------------------- yardımcılar
+    // ---------------------------------------------------------------- helpers
 
-    /** Yerel ortalamayı çıkar, negatifleri sıfırla, 0..1'e ölçekle. */
+    /** Subtract the local mean, clip negatives to zero, scale to 0..1. */
     private static double[] normalize(double[] o) {
         int n = o.length, w = 16;
         double[] out = new double[n];

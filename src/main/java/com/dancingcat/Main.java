@@ -11,7 +11,7 @@ public final class Main {
 
     public static void main(String[] args) {
         AppConfig config = AppConfig.load(Path.of("config.properties"));
-        // Kullanıcı tercihleri (kedinin konumu, sözler açık mı) macOS'ta ~/Library/Preferences altında saklanır
+        // User preferences (cat position, lyrics on/off, ...) are stored under ~/Library/Preferences on macOS
         Preferences prefs = Preferences.userNodeForPackage(Main.class);
 
         SwingUtilities.invokeLater(() -> {

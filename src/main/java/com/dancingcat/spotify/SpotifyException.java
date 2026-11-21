@@ -2,7 +2,7 @@ package com.dancingcat.spotify;
 
 import java.io.IOException;
 
-/** Spotify'dan gelen hata. retryAfterSeconds > 0 ise "çok fazla istek" (429) demektir. */
+/** An error from Spotify. retryAfterSeconds > 0 means "too many requests" (429). */
 public class SpotifyException extends IOException {
 
     private final int status;

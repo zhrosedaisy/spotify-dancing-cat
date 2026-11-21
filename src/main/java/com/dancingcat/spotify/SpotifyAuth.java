@@ -35,12 +35,12 @@ import java.util.stream.Collectors;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
- * Spotify girişi: Authorization Code + PKCE.
+ * Spotify login: Authorization Code flow with PKCE.
  *
- * 1. Tarayıcıda Spotify giriş sayfası açılır.
- * 2. Kullanıcı onaylayınca Spotify bizi http://127.0.0.1:8888/callback?code=... adresine yollar.
- * 3. Bu adresi dinleyen mini sunucu "code"u yakalar, biz de onu token ile değiştiririz.
- * Token'lar tokens.json'a kaydedilir; bir sonraki açılışta tekrar giriş gerekmez.
+ * 1. The Spotify login page opens in the browser.
+ * 2. After the user agrees, Spotify redirects to http://127.0.0.1:8888/callback?code=...
+ * 3. A tiny local server listening on that address catches the "code", which we exchange for tokens.
+ * Tokens are saved to tokens.json, so you don't have to log in again on the next launch.
  */
 public final class SpotifyAuth {
 
@@ -69,15 +69,15 @@ public final class SpotifyAuth {
         return tokens != null;
     }
 
-    /** Geçerli bir erişim token'ı döner; süresi dolmak üzereyse önce yeniler. */
+    /** Returns a valid access token, refreshing it first if it is about to expire. */
     public synchronized String accessToken() throws IOException, InterruptedException {
-        if (tokens == null) throw new SpotifyException("Spotify'a giriş yapılmamış");
+        if (tokens == null) throw new SpotifyException("Not logged in to Spotify");
         if (System.currentTimeMillis() > tokens.expiresAtMillis() - 60_000) refresh();
         return tokens.accessToken();
     }
 
     public synchronized void refresh() throws IOException, InterruptedException {
-        if (tokens == null) throw new SpotifyException("Spotify'a giriş yapılmamış");
+        if (tokens == null) throw new SpotifyException("Not logged in to Spotify");
         Map<String, String> form = new LinkedHashMap<>();
         form.put("grant_type", "refresh_token");
         form.put("refresh_token", tokens.refreshToken());
@@ -85,7 +85,7 @@ public final class SpotifyAuth {
         try {
             saveTokens(postToken(form), tokens.refreshToken());
         } catch (SpotifyException e) {
-            if (e.status() == 400) { // refresh token geçersiz (izin geri alınmış vs.) → tekrar giriş gerekir
+            if (e.status() == 400) { // refresh token invalid (access revoked etc.) -> log in again
                 tokens = null;
                 Files.deleteIfExists(tokenFile);
             }
@@ -93,7 +93,7 @@ public final class SpotifyAuth {
         }
     }
 
-    /** Tarayıcıda girişi başlatır ve kullanıcı onaylayana kadar (en fazla 3 dk) bekler. */
+    /** Starts the login in the browser and waits (up to 3 minutes) until the user agrees. */
     public void login() throws IOException, InterruptedException {
         String verifier = randomString(64);
         String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(sha256(verifier));
@@ -105,19 +105,19 @@ public final class SpotifyAuth {
             server = HttpServer.create(new InetSocketAddress(
                     InetAddress.getByName(redirectUri.getHost()), redirectUri.getPort()), 0);
         } catch (BindException e) {
-            throw new SpotifyException(redirectUri.getPort() + " portu kullanımda. Uygulama zaten açık olabilir.");
+            throw new SpotifyException("Port " + redirectUri.getPort() + " is already in use. Is the app already running?");
         }
         server.createContext(redirectUri.getPath(), exchange -> {
             Map<String, String> query = parseQuery(exchange.getRequestURI().getRawQuery());
             String message;
             if (!state.equals(query.get("state"))) {
-                message = "Bir şeyler ters gitti (state uyuşmadı). Tekrar dene.";
-                code.completeExceptionally(new SpotifyException("Giriş doğrulanamadı (state)"));
+                message = "Something went wrong (state mismatch). Please try again.";
+                code.completeExceptionally(new SpotifyException("Login could not be verified (state)"));
             } else if (query.containsKey("error")) {
-                message = "Giriş iptal edildi.";
-                code.completeExceptionally(new SpotifyException("Giriş reddedildi: " + query.get("error")));
+                message = "Login was cancelled.";
+                code.completeExceptionally(new SpotifyException("Login denied: " + query.get("error")));
             } else {
-                message = "Giriş tamam! Bu sekmeyi kapatabilirsin 🐱";
+                message = "All set! You can close this tab 🐱";
                 code.complete(query.get("code"));
             }
             byte[] html = ("<!doctype html><meta charset='utf-8'><title>Dancing Cat</title>"
@@ -142,7 +142,7 @@ public final class SpotifyAuth {
             params.put("state", state);
             URI url = URI.create(AUTHORIZE_URL + "?" + form(params));
 
-            System.out.println("Tarayıcıda Spotify girişi açılıyor...");
+            System.out.println("Opening Spotify login in the browser...");
             Desktop.getDesktop().browse(url);
 
             String authCode = code.get(3, TimeUnit.MINUTES);
@@ -156,11 +156,11 @@ public final class SpotifyAuth {
             synchronized (this) {
                 saveTokens(body, null);
             }
-            System.out.println("Spotify girişi başarılı ✅");
+            System.out.println("Spotify login successful ✅");
         } catch (ExecutionException e) {
             throw e.getCause() instanceof SpotifyException se ? se : new SpotifyException(e.getCause().toString());
         } catch (TimeoutException e) {
-            throw new SpotifyException("Giriş 3 dakika içinde tamamlanmadı");
+            throw new SpotifyException("Login was not completed within 3 minutes");
         } finally {
             server.stop(0);
         }
@@ -173,7 +173,7 @@ public final class SpotifyAuth {
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new SpotifyException("Token isteği başarısız (" + response.statusCode() + "): "
+            throw new SpotifyException("Token request failed (" + response.statusCode() + "): "
                     + response.body(), response.statusCode(), 0);
         }
         return json.readTree(response.body());
@@ -192,7 +192,7 @@ public final class SpotifyAuth {
         try {
             Files.setPosixFilePermissions(tokenFile, PosixFilePermissions.fromString("rw-------"));
         } catch (UnsupportedOperationException ignored) {
-            // Windows'ta POSIX izinleri yok
+            // no POSIX permissions on Windows
         }
     }
 
@@ -200,14 +200,14 @@ public final class SpotifyAuth {
         if (!Files.exists(tokenFile)) return null;
         try {
             Tokens t = json.readValue(tokenFile.toFile(), Tokens.class);
-            // Uygulama yeni izinler istiyorsa (ör. beğenme) bir kez tekrar giriş gerekir
+            // If the app needs new scopes (e.g. for likes), log in once more
             if (t.scope() == null || !java.util.Set.of(t.scope().split(" ")).containsAll(java.util.Set.of(SCOPES.split(" ")))) {
-                System.out.println("Yeni Spotify izinleri gerekiyor (beğenme) → tarayıcıda bir kez tekrar giriş açılacak.");
+                System.out.println("New Spotify permissions are needed (likes) -> the browser login will open once more.");
                 return null;
             }
             return t;
         } catch (IOException e) {
-            System.err.println("tokens.json okunamadı, tekrar giriş gerekecek: " + e.getMessage());
+            System.err.println("Could not read tokens.json, you'll need to log in again: " + e.getMessage());
             return null;
         }
     }

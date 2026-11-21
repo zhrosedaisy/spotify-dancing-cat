@@ -1,8 +1,8 @@
-// AudioTap: Spotify'ın (yoksa tüm sistemin) sesini ScreenCaptureKit ile yakalar ve
-// 44.1 kHz, mono, 32-bit float (little-endian) ham PCM olarak stdout'a yazar.
-// Java tarafı bu sesi okuyup ritmi hesaplar. Kullanım: audiotap [bundle-id]
+// AudioTap: captures Spotify's audio (or the whole system's, if Spotify isn't running) with
+// ScreenCaptureKit and writes it to stdout as raw 44.1 kHz mono 32-bit float (little-endian) PCM.
+// The Java side reads this audio and tracks the beat. Usage: audiotap [bundle-id]
 //
-// İlk çalıştırmada macOS "Ekran ve Sistem Sesi Kaydı" izni ister.
+// On first run macOS asks for "Screen & System Audio Recording" permission.
 
 import Foundation
 import ScreenCaptureKit
@@ -19,7 +19,7 @@ final class AudioOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         guard type == .audio, sampleBuffer.isValid else { return }
         do {
             try sampleBuffer.withAudioBufferList { list, _ in
-                // Mono istedik; yine de birden fazla kanal gelirse sadece ilkini yaz
+                // We asked for mono; if more channels arrive anyway, only write the first one
                 guard let first = list.first, let data = first.mData else { return }
                 out.write(Data(bytes: data, count: Int(first.mDataByteSize)))
             }
@@ -47,7 +47,7 @@ struct AudioTap {
             let apps = content.applications.filter { $0.bundleIdentifier == bundleId }
             let filter: SCContentFilter
             if apps.isEmpty {
-                log("source=system (\(bundleId ?? "-") bulunamadı)")
+                log("source=system (\(bundleId ?? "-") not found)")
                 filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
             } else {
                 log("source=\(bundleId!)")
@@ -59,7 +59,7 @@ struct AudioTap {
             config.sampleRate = 44100
             config.channelCount = 1
             config.excludesCurrentProcessAudio = true
-            // Görüntüye ihtiyacımız yok: en küçük boyut, saniyede 1 kare
+            // We don't need video: smallest size, 1 frame per second
             config.width = 2
             config.height = 2
             config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
@@ -70,7 +70,7 @@ struct AudioTap {
             try await stream.startCapture()
             log("ready")
 
-            // Java kapanınca stdin kapanır → biz de çıkarız
+            // When the Java app exits, stdin closes -> exit too
             DispatchQueue.global().async {
                 while readLine() != nil {}
                 exit(0)

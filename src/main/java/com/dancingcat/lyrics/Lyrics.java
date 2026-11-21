@@ -7,8 +7,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Zamanlı şarkı sözleri. LRC formatından okunur:
- * <pre>[00:12.34] Bir satır söz</pre>
+ * Time-synced lyrics, parsed from the LRC format:
+ * <pre>[00:12.34] A line of lyrics</pre>
  */
 public record Lyrics(List<Line> lines, boolean instrumental) {
 
@@ -26,7 +26,7 @@ public record Lyrics(List<Line> lines, boolean instrumental) {
             Matcher m = TAG.matcher(raw);
             List<Long> times = new ArrayList<>();
             int end = 0;
-            // Bir satırda birden fazla zaman etiketi olabilir: [00:10.00][00:45.00] Nakarat
+            // A line may have several timestamps: [00:10.00][00:45.00] Chorus
             while (m.find() && m.start() == end) {
                 long min = Long.parseLong(m.group(1));
                 double sec = Double.parseDouble(m.group(2).replace(':', '.'));
@@ -44,7 +44,7 @@ public record Lyrics(List<Line> lines, boolean instrumental) {
         return lines.isEmpty();
     }
 
-    /** Verilen andaki satırın indeksi; ilk satırdan önceyse -1. */
+    /** Index of the line at the given time; -1 if before the first line. */
     public int indexAt(long ms) {
         int lo = 0, hi = lines.size() - 1, found = -1;
         while (lo <= hi) {

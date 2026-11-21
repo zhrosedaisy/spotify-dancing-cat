@@ -4,29 +4,28 @@ import java.awt.image.BufferedImage;
 import java.util.Map;
 
 /**
- * Kedinin pixel art kareleri. Her parça bir karakter ızgarası olarak çizilir,
- * sonra 32x32'lik bir tuvale "damgalanır". İleride bunları Piskel/Aseprite'ta
- * çizilmiş bir PNG sprite sheet ile değiştirebiliriz.
+ * The cat's pixel-art frames. Every part is drawn as a grid of characters and then
+ * "stamped" onto a 32x32 canvas, so no image files are needed.
  */
 public final class CatSprites {
 
     public static final int SIZE = 32;
 
     private static final Map<Character, Integer> PALETTE = Map.ofEntries(
-            Map.entry('K', 0xFF3A3346), // dış çizgi
-            Map.entry('O', 0xFFF1EDF3), // beyaz tüy (hafif gri, göğüsten ayrılsın diye)
-            Map.entry('D', 0xFFD5CFDD), // açık gri lekeler
-            Map.entry('W', 0xFFFFFFFF), // bembeyaz göğüs / ağız
-            Map.entry('P', 0xFFFF8FA3), // pembe kulak, burun, yanak, dil
-            Map.entry('E', 0xFF2B2233), // göz
-            Map.entry('G', 0xFFFFFFFF), // göz parıltısı
-            Map.entry('R', 0xFFE63946), // kırmızı (kalp, fiyonk)
-            // Kostüm renkleri
-            Map.entry('Y', 0xFFFFD166), // sarı / altın
-            Map.entry('B', 0xFF8ECAE6), // açık mavi
-            Map.entry('S', 0xFF151225), // güneş gözlüğü camı
-            Map.entry('M', 0xFF6C5B8A), // kulaklık bandı
-            Map.entry('C', 0xFFE06C9F)  // kulaklık pedi
+            Map.entry('K', 0xFF3A3346), // outline
+            Map.entry('O', 0xFFF1EDF3), // white fur (slightly gray so the chest stands out)
+            Map.entry('D', 0xFFD5CFDD), // light gray spots
+            Map.entry('W', 0xFFFFFFFF), // pure white chest / muzzle
+            Map.entry('P', 0xFFFF8FA3), // pink ears, nose, cheeks, tongue
+            Map.entry('E', 0xFF2B2233), // eye
+            Map.entry('G', 0xFFFFFFFF), // eye shine
+            Map.entry('R', 0xFFE63946), // red (hearts, bow)
+            // Costume colors
+            Map.entry('Y', 0xFFFFD166), // yellow / gold
+            Map.entry('B', 0xFF8ECAE6), // light blue
+            Map.entry('S', 0xFF151225), // sunglasses lens
+            Map.entry('M', 0xFF6C5B8A), // headphone band
+            Map.entry('C', 0xFFE06C9F)  // headphone cups
     );
 
     private static final String[] HEAD_OPEN = {
@@ -48,12 +47,12 @@ public final class CatSprites {
             "KOOOOOOOOOOOOOOK",
             "KOOKKOOOOOOKKOOK");
 
-    /** Esneme: gözler kapalı, ağız açık (pembe dil). */
+    /** Yawning: eyes closed, mouth open (pink tongue). */
     private static final String[] HEAD_YAWN = withRows(HEAD_CLOSED, 9,
             "KPOOOWKKKKWOOOPK",
             ".KOOOOKPPKOOOOK.");
 
-    /** Yüzünü yalarken ağzına götürdüğü pati. */
+    /** The paw raised to the mouth while grooming. */
     private static final String[] PAW_LICK = {
             ".KK.",
             "KWWK",
@@ -118,7 +117,7 @@ public final class CatSprites {
             "...K...",
     };
 
-    // Kontrol ikonları (7x7, beyaz)
+    // Control icons (7x7, white)
     private static final String[] ICON_PREV = {
             "X.....X",
             "X....XX",
@@ -167,7 +166,7 @@ public final class CatSprites {
             ".......",
     };
 
-    // Drop anında etrafa saçılan yıldız (5x5)
+    // Star that bursts out on a drop (5x5)
     private static final String[] STAR = {
             "..X..",
             ".XXX.",
@@ -176,7 +175,7 @@ public final class CatSprites {
             "..X..",
     };
 
-    /** Verilen renkte yıldız resmi. */
+    /** A star image in the given color. */
     public static BufferedImage star(int argb) {
         BufferedImage img = new BufferedImage(5, 5, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 5; y++)
@@ -185,7 +184,7 @@ public final class CatSprites {
         return img;
     }
 
-    // Dans ederken uçuşan nota (6x7)
+    // Music note floating around while dancing (6x7)
     private static final String[] NOTE = {
             "...X..",
             "...XX.",
@@ -207,7 +206,7 @@ public final class CatSprites {
         return img;
     }
 
-    /** Butonun ikonu. PLAY_PAUSE için çalıyorsa "durdur", değilse "oynat" ikonu. */
+    /** The button's icon. For PLAY_PAUSE: "pause" while playing, otherwise "play". */
     public static BufferedImage icon(Control control, boolean playing) {
         String[] grid = switch (control) {
             case PREVIOUS -> ICON_PREV;
@@ -229,7 +228,7 @@ public final class CatSprites {
         return out;
     }
 
-    /** Oturan/dans eden kedinin duruşu. mouthOpen: esneme, licking: pati yalama. */
+    /** Pose of the sitting/dancing cat. mouthOpen: yawning, licking: grooming. */
     public record Pose(int bounce, int headShift, boolean leftPawUp, boolean rightPawUp,
                        int tailShift, Eyes eyes, boolean mouthOpen, boolean licking) {
         public static final Pose IDLE = new Pose(0, 0, false, false, 0, Eyes.OPEN);
@@ -257,7 +256,7 @@ public final class CatSprites {
         return img;
     }
 
-    /** Uyuyan kedi; breath 0/1 nefes alıp vermeyi gösterir. */
+    /** The sleeping cat; breath 0/1 shows it breathing. */
     public static BufferedImage sleeping(int breath, Costume costume) {
         BufferedImage img = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB);
         int headX = 2, headY = 13 + breath;

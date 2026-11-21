@@ -1,8 +1,8 @@
-# --- Kişisel ayarlar ve gizli bilgiler: ASLA repoya girmesin ---
-# (Not: .gitignore'da yorum ayrı satırda olmalı, desenin yanına yazılamaz)
+# --- Personal settings and secrets: must NEVER be committed ---
+# (Note: comments in .gitignore must be on their own line, not after a pattern)
 # Spotify Client ID
 config.properties
-# Spotify giriş token'ları
+# Spotify login tokens
 tokens.json
 .env
 .env.*
@@ -10,7 +10,7 @@ tokens.json
 *.key
 *.p12
 
-# --- Derleme çıktıları (Gradle, Swift yardımcısı) ---
+# --- Build output (Gradle, Swift helper) ---
 .gradle/
 build/
 out/
@@ -18,14 +18,14 @@ bin/
 *.class
 .kotlin/
 
-# --- IDE / editör ---
+# --- IDE / editor ---
 .idea/
 *.iml
 *.ipr
 *.iws
 .vscode/
 
-# --- İşletim sistemi ve geçici dosyalar ---
+# --- OS and temporary files ---
 .DS_Store
 *.log
 hs_err_pid*.log

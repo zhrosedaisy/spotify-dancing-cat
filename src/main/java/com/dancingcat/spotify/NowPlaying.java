@@ -1,9 +1,9 @@
 package com.dancingcat.spotify;
 
 /**
- * O an çalan şarkı. trackId null olabilir (reklam, podcast vb.).
- * progressMs, fetchedAtMillis anındaki konumdur; progressAt() ile şimdiki konumu tahmin ederiz
- * (sözleri senkronlamak için lazım olacak).
+ * The track that is currently playing. trackId may be null (ads, podcasts, ...).
+ * progressMs is the position at fetchedAtMillis; progressAt() estimates the current position
+ * (used to keep lyrics in sync).
  */
 public record NowPlaying(String trackId, String title, String artist, String primaryArtist, String album,
                          String albumImageUrl, long durationMs, long progressMs, boolean playing,
@@ -15,7 +15,7 @@ public record NowPlaying(String trackId, String title, String artist, String pri
         return durationMs > 0 ? Math.min(p, durationMs) : p;
     }
 
-    /** Şarkıyı tanımlayan anahtar (değişince "yeni şarkı" deriz). */
+    /** A key identifying the song (when it changes, it is a new song). */
     public String key() {
         return trackId != null ? trackId : label();
     }

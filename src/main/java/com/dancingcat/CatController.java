@@ -21,8 +21,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.prefs.Preferences;
 
 /**
- * Uygulamanın beyni: Spotify'dan gelen bilgiyi kediye, kediye yapılan tıklamaları Spotify'a iletir.
- * Şarkı sözlerini de buradan yönetiriz.
+ * The brain of the app: forwards what Spotify reports to the cat, and what the user does with
+ * the cat back to Spotify. Also manages lyrics, likes, costumes and the album-color theme.
  */
 public final class CatController {
 
@@ -31,9 +31,19 @@ public final class CatController {
     private static final long DEFAULT_OFFSET_MS = 400;
     private static final String PREF_COSTUME = "costume";
 
+    /**
+     * Spotify's "currently playing" endpoint occasionally returns an empty response or
+     * is_playing=false for a single poll even though music keeps playing. Reacting to those
+     * glitches made the cat (and the lyrics) blink, so we only go to sleep after this many
+     * consecutive "not playing" polls (~1 per second)...
+     */
+    private static final int MISSES_BEFORE_SLEEP = 3;
+    /** ...unless the user just pressed play/pause themselves – then react immediately. */
+    private static final long USER_ACTION_GRACE_MS = 4000;
+
     private final CatPanel panel;
     private final BeatTracker beat;
-    private final SpotifyService spotify; // Client ID yoksa null
+    private final SpotifyService spotify; // null when no Client ID is configured
     private final LyricsService lyrics = new LyricsService();
     private final AlbumArt albumArt = new AlbumArt();
     private final Preferences prefs;
@@ -41,18 +51,22 @@ public final class CatController {
     private volatile NowPlaying current;
     private volatile boolean lyricsEnabled;
     private volatile boolean liked;
-    private String lastTrackKey; // sadece Spotify iş parçacığından erişilir
+    private volatile long userActionUntil;
+    // Only accessed from the Spotify polling thread:
+    private String lastTrackKey;
+    private boolean wasPlaying;
+    private int notPlayingStreak;
 
     public CatController(AppConfig config, Preferences prefs) {
         this.prefs = prefs;
-        // Canlı ritim; ses yoksa config'teki sabit tempoya düşer
+        // Live beat tracking; falls back to the fixed tempo from the config when there is no audio
         this.beat = new BeatTracker(new FixedTempoBeatSource(config.danceBpm()));
         this.panel = new CatPanel(beat, config.catScale());
         this.lyricsEnabled = prefs.getBoolean(PREF_LYRICS, false);
         panel.setLyricsEnabled(lyricsEnabled);
         panel.setLyricOffsetMs(lyricOffsetMs());
         panel.setCostume(costume());
-        // Drop algılanınca (ses iş parçacığından gelir) kediye büyük hareketi yaptır
+        // When a drop is detected (called from the audio thread), do the big move
         beat.setOnDrop(() -> SwingUtilities.invokeLater(() -> {
             if (panel.state() == CatState.DANCING) panel.triggerDrop();
         }));
@@ -60,32 +74,32 @@ public final class CatController {
                 ? new SpotifyService(config.spotifyClientId(), config.spotifyRedirectUri(), this::onPlayback)
                 : null;
         if (spotify == null) {
-            System.out.println("Spotify Client ID girilmemiş (config.properties). Kedi test modunda.");
+            System.out.println("No Spotify Client ID set (config.properties). The cat runs in test mode.");
         }
     }
 
     public CatPanel panel() { return panel; }
 
     public void start() {
-        if (spotify != null) spotify.connectAsync(); // ilk seferde tarayıcıda giriş açılır
+        if (spotify != null) spotify.connectAsync(); // opens the browser login the first time
         new AudioCapture(Path.of("build/native/audiotap"), beat, status -> SwingUtilities.invokeLater(() -> {
             switch (status) {
-                case LISTENING -> System.out.println("🎧 Spotify sesi dinleniyor, kedi gerçek ritme göre dans edecek");
-                case PERMISSION_DENIED -> panel.showToast("Ritim için ses kaydı izni gerekiyor");
+                case LISTENING -> System.out.println("🎧 Listening to Spotify's audio – the cat follows the real beat");
+                case PERMISSION_DENIED -> panel.showToast("Audio recording permission needed for live beat");
                 case UNAVAILABLE -> { }
             }
         })).start();
     }
 
-    /** Menüde gösterilecek ritim bilgisi. */
+    /** Beat info shown in the menu. */
     public String tempoLabel() {
         double bpm = beat.bpm();
         return bpm > 0
-                ? String.format("Ritim: %.0f BPM · %s", bpm, beat.mood().label())
-                : "Ritim: sabit tempo";
+                ? String.format("Beat: %.0f BPM · %s", bpm, beat.mood().label())
+                : "Beat: fixed tempo";
     }
 
-    // ---------------------------------------------------------------- kostüm
+    // ---------------------------------------------------------------- costumes
 
     public Costume costume() {
         try {
@@ -101,18 +115,18 @@ public final class CatController {
         panel.react();
     }
 
-    // ---------------------------------------------------------------- beğenme
+    // ---------------------------------------------------------------- likes
 
-    /** ❤ butonu: beğenilmemişse beğen, beğenilmişse geri al. */
+    /** ❤ button: like if not liked yet, otherwise remove the like. */
     public void toggleLike() {
         setLiked(!liked);
     }
 
-    /** Çift tıklama: sadece beğenir (yanlışlıkla beğeni silinmesin). */
+    /** Double-click: only ever likes (so a like can't be removed by accident). */
     public void likeByDoubleClick() {
         if (liked) {
             panel.triggerLike();
-            panel.showToast("Zaten Beğenilen Şarkılar'da \u2665");
+            panel.showToast("Already in Liked Songs ♥");
         } else {
             setLiked(true);
         }
@@ -121,19 +135,19 @@ public final class CatController {
     private void setLiked(boolean save) {
         NowPlaying np = current;
         if (spotify == null || np == null || np.trackId() == null) {
-            panel.showToast("Beğenilecek şarkı yok");
+            panel.showToast("No song to like");
             return;
         }
-        if (save) panel.triggerLike(); // animasyon hemen başlasın, cevap beklemesin
+        if (save) panel.triggerLike(); // start the animation right away, don't wait for Spotify
         spotify.setSaved(np.trackId(), save).whenComplete((ok, err) -> SwingUtilities.invokeLater(() -> {
             if (err != null) {
-                System.err.println("Beğenme başarısız: " + err.getMessage());
+                System.err.println("Like failed: " + err.getMessage());
                 panel.showToast(SpotifyService.friendlyError(err));
                 return;
             }
             liked = save;
             panel.setLiked(save);
-            panel.showToast(save ? "\u2665 Beğenilen Şarkılar'a eklendi" : "Beğenilerden çıkarıldı");
+            panel.showToast(save ? "♥ Added to Liked Songs" : "Removed from Liked Songs");
         }));
     }
 
@@ -143,6 +157,8 @@ public final class CatController {
 
     public void connectSpotify() { if (spotify != null) spotify.connectAsync(); }
 
+    // ---------------------------------------------------------------- lyrics
+
     public boolean lyricsEnabled() { return lyricsEnabled; }
 
     public void setLyricsEnabled(boolean enabled) {
@@ -151,23 +167,25 @@ public final class CatController {
         panel.setLyricsEnabled(enabled);
         NowPlaying np = current;
         if (enabled && np != null) loadLyrics(np);
-        panel.showToast(enabled ? "Sözler açık" : "Sözler kapalı");
+        panel.showToast(enabled ? "Lyrics on" : "Lyrics off");
     }
 
-    /** Sözlerin ne kadar erken gösterileceği (ms). Geç kalıyorsa artır. */
+    /** How much earlier lyrics are shown (ms). Increase it if lyrics lag behind. */
     public long lyricOffsetMs() {
         return prefs.getLong(PREF_OFFSET, DEFAULT_OFFSET_MS);
     }
 
-    /** Söz zamanlamasını delta ms kaydırır (pozitif = daha erken). */
+    /** Shifts the lyric timing by delta ms (positive = earlier). */
     public void nudgeLyricOffset(long delta) {
         long offset = Math.max(-2000, Math.min(3000, lyricOffsetMs() + delta));
         prefs.putLong(PREF_OFFSET, offset);
         panel.setLyricOffsetMs(offset);
-        panel.showToast(String.format("Söz zamanlaması: %+.1f sn", offset / 1000.0));
+        panel.showToast(String.format(java.util.Locale.ROOT, "Lyric timing: %+.1f s", offset / 1000.0));
     }
 
-    /** Kedinin üstündeki bir butona basıldı. */
+    // ---------------------------------------------------------------- controls
+
+    /** A button above the cat was pressed. */
     public void onControl(Control control) {
         if (control == Control.LYRICS) {
             setLyricsEnabled(!lyricsEnabled);
@@ -178,6 +196,7 @@ public final class CatController {
             return;
         }
         if (spotify == null) return;
+        if (control == Control.PLAY_PAUSE) userActionUntil = System.currentTimeMillis() + USER_ACTION_GRACE_MS;
         CompletableFuture<Void> result = switch (control) {
             case PREVIOUS -> spotify.previous();
             case NEXT -> spotify.next();
@@ -185,18 +204,31 @@ public final class CatController {
             case LYRICS, LIKE -> CompletableFuture.completedFuture(null);
         };
         result.exceptionally(err -> {
-            System.err.println("Komut başarısız: " + err.getMessage());
+            System.err.println("Command failed: " + err.getMessage());
             SwingUtilities.invokeLater(() -> panel.showToast(SpotifyService.friendlyError(err)));
             return null;
         });
     }
 
-    /** Spotify iş parçacığından saniyede bir çağrılır. */
+    // ---------------------------------------------------------------- playback updates
+
+    /** Called about once per second from the Spotify polling thread. */
     private void onPlayback(Optional<NowPlaying> now) {
         NowPlaying np = now.orElse(null);
-        current = np;
         boolean playing = np != null && np.playing();
-        String key = np == null ? null : np.key();
+
+        // Ignore one-off "nothing playing" glitches while music is playing (see MISSES_BEFORE_SLEEP)
+        if (!playing && wasPlaying && System.currentTimeMillis() > userActionUntil
+                && ++notPlayingStreak < MISSES_BEFORE_SLEEP) {
+            return;
+        }
+        notPlayingStreak = 0;
+        wasPlaying = playing;
+        if (np != null) current = np;
+
+        // An empty response doesn't mean the song changed: keep the last key so the same song
+        // isn't treated as "new" again (which used to reload lyrics, theme and the like state).
+        String key = np == null ? lastTrackKey : np.key();
         boolean changed = key != null && !key.equals(lastTrackKey);
         lastTrackKey = key;
 
@@ -204,20 +236,20 @@ public final class CatController {
         if (changed) onTrackChanged(np);
         SwingUtilities.invokeLater(() -> {
             panel.setMood(beat.mood());
-            panel.setNowPlaying(np);
+            if (np != null) panel.setNowPlaying(np);
             panel.setState(playing ? CatState.DANCING : CatState.SLEEPING);
             if (changed && playing) panel.showToast("♪ " + np.label());
         });
     }
 
-    /** Yeni şarkı: beğenilmiş mi diye sor, albüm kapağından renk temasını çıkar. */
+    /** New song: ask Spotify whether it's liked and derive the color theme from the album cover. */
     private void onTrackChanged(NowPlaying track) {
         liked = false;
         SwingUtilities.invokeLater(() -> panel.setLiked(false));
         if (track.trackId() != null) {
             spotify.isSaved(track.trackId()).whenComplete((saved, err) -> {
                 if (err != null) {
-                    System.err.println("Beğeni durumu okunamadı: " + err.getMessage());
+                    System.err.println("Couldn't read like state: " + err.getMessage());
                     return;
                 }
                 if (isCurrent(track)) {
@@ -242,15 +274,14 @@ public final class CatController {
     private void loadLyrics(NowPlaying track) {
         SwingUtilities.invokeLater(() -> panel.setLyrics(null));
         lyrics.fetch(track).whenComplete((result, err) -> SwingUtilities.invokeLater(() -> {
-            NowPlaying np = current;
-            if (np == null || !np.key().equals(track.key())) return; // bu arada şarkı değişti
+            if (!isCurrent(track)) return; // the song changed in the meantime
             if (err != null) {
-                System.err.println("Sözler yüklenemedi: " + err.getMessage());
-                if (lyricsEnabled) panel.showToast("Sözler yüklenemedi");
+                System.err.println("Couldn't load lyrics: " + err.getMessage());
+                if (lyricsEnabled) panel.showToast("Couldn't load lyrics");
                 return;
             }
             panel.setLyrics(result.orElse(null));
-            if (result.isEmpty() && lyricsEnabled) panel.showToast("Bu şarkının senkron sözü yok");
+            if (result.isEmpty() && lyricsEnabled) panel.showToast("No synced lyrics for this song");
         }));
     }
 }

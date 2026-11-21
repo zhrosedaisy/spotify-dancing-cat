@@ -10,12 +10,11 @@ repositories {
 }
 
 dependencies {
-    // Spotify'dan gelen JSON cevaplarını okumak için
+    // Parses JSON responses from Spotify and LRCLIB
     implementation("com.fasterxml.jackson.core:jackson-databind:2.19.0")
-    // Sonraki adımlarda: beat detection (TarsosDSP) buraya eklenecek.
 }
 
-// JDK 21 ve üstüyle çalışır (sende JDK 27 kurulu).
+// Runs on JDK 21 or newer.
 tasks.withType<JavaCompile> {
     options.release = 21
     options.encoding = "UTF-8"
@@ -26,8 +25,8 @@ application {
     applicationDefaultJvmArgs = listOf("-Dapple.awt.application.name=Dancing Cat")
 }
 
-// macOS'ta Spotify sesini yakalayan küçük Swift yardımcısını derle (build/native/audiotap).
-// Derlenemezse uygulama yine çalışır, sadece sabit tempoya düşer.
+// On macOS, build the small Swift helper that captures Spotify's audio (build/native/audiotap).
+// If it can't be built the app still works, it just falls back to a fixed tempo.
 val buildAudioTap by tasks.registering(Exec::class) {
     description = "Compiles the ScreenCaptureKit audio helper"
     onlyIf { System.getProperty("os.name").lowercase().contains("mac") }

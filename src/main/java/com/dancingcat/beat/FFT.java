@@ -1,6 +1,6 @@
 package com.dancingcat.beat;
 
-/** Küçük, yerinde çalışan radix-2 FFT (n 2'nin kuvveti olmalı). */
+/** A small in-place radix-2 FFT (n must be a power of two). */
 final class FFT {
 
     private final int n;
@@ -9,7 +9,7 @@ final class FFT {
     private final int[] rev;
 
     FFT(int n) {
-        if (Integer.bitCount(n) != 1) throw new IllegalArgumentException("n 2'nin kuvveti olmalı");
+        if (Integer.bitCount(n) != 1) throw new IllegalArgumentException("n must be a power of two");
         this.n = n;
         cos = new double[n / 2];
         sin = new double[n / 2];

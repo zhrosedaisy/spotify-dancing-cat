@@ -14,8 +14,8 @@ import java.nio.file.Path;
 import java.util.function.Consumer;
 
 /**
- * build/native/audiotap yardımcısını çalıştırır, gelen ham sesi BeatTracker'a verir.
- * Yardımcı kapanırsa birkaç saniye sonra yeniden başlatır (izin reddedildiyse denemez).
+ * Runs the build/native/audiotap helper and feeds its raw audio into the BeatTracker.
+ * Restarts the helper a few seconds after it exits (unless permission was denied).
  */
 public final class AudioCapture {
 
@@ -37,7 +37,7 @@ public final class AudioCapture {
 
     public void start() {
         if (!Files.isExecutable(helper)) {
-            System.err.println("Ses yardımcısı bulunamadı (" + helper + "). Gradle ile derle: ./gradlew classes");
+            System.err.println("Audio helper not found (" + helper + "). Build it with: ./gradlew classes");
             onStatus.accept(Status.UNAVAILABLE);
             return;
         }
@@ -53,15 +53,15 @@ public final class AudioCapture {
             int exit = runOnce();
             if (exit == 3) {
                 System.err.println("""
-                        Ritim için ses kaydı izni gerekiyor:
-                          Sistem Ayarları → Gizlilik ve Güvenlik → Ekran ve Sistem Sesi Kaydı
-                          → uygulamayı başlattığın programı (IntelliJ IDEA veya Terminal) aç,
-                          sonra kediyi yeniden başlat.""");
+                        Live beat detection needs audio recording permission:
+                          System Settings → Privacy & Security → Screen & System Audio Recording
+                          → enable the app you launched the cat from (IntelliJ IDEA or Terminal),
+                          then restart the cat.""");
                 onStatus.accept(Status.PERMISSION_DENIED);
                 return;
             }
             try {
-                Thread.sleep(5000); // Spotify kapanmış vb. → biraz sonra tekrar dene
+                Thread.sleep(5000); // Spotify closed etc. -> try again a bit later
             } catch (InterruptedException e) {
                 return;
             }
@@ -87,11 +87,11 @@ public final class AudioCapture {
                     tracker.process(samples, CHUNK_FLOATS, arrival);
                 }
             } catch (EOFException eof) {
-                // yardımcı kapandı
+                // the helper exited
             }
             return p.waitFor();
         } catch (IOException e) {
-            System.err.println("Ses yardımcısı çalıştırılamadı: " + e.getMessage());
+            System.err.println("Could not start the audio helper: " + e.getMessage());
             return -1;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -103,7 +103,7 @@ public final class AudioCapture {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(err, StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
-                if (!line.startsWith("[audiotap]")) continue; // sistemin gürültülü loglarını atla
+                if (!line.startsWith("[audiotap]")) continue; // skip the system's noisy log lines
                 if (line.contains("ready")) onStatus.accept(Status.LISTENING);
                 if (!line.contains("buffer-error")) System.out.println("🎧 " + line);
             }

@@ -1,18 +1,21 @@
 package com.dancingcat.spotify;
 
 /**
- * Şarkının neresinde olduğumuzu milisaniye hassasiyetle, pürüzsüz tahmin eder.
+ * Smoothly estimates the playback position with millisecond precision.
  *
- * Spotify'dan saniyede bir gelen konum biraz "titrek"tir (ağ gecikmesi değişir). Her gelen
- * değeri doğrudan kullanırsak tahmin bazen geri gider ve sözler bir önceki satıra zıplar.
- * Bu sınıf:
- *  - küçük farkları yavaşça düzeltir,
- *  - büyük farklarda (ileri/geri sarma, şarkı değişimi) hemen eşitler,
- *  - çalarken asla geriye gitmez (gerekirse bir an "bekler").
+ * The position Spotify reports once per second is a bit "jittery" (network latency varies).
+ * Using every report directly would sometimes move the estimate backwards and make the lyrics
+ * jump back to the previous line. This class:
+ *  - corrects small differences gradually,
+ *  - snaps immediately on big differences (seeking, track change),
+ *  - never runs backwards while playing (if needed it briefly "waits").
  */
 public final class PlaybackClock {
 
+    /** Jumping forward more than this = the user seeked; snap to it. */
     private static final long HARD_SYNC_MS = 1500;
+    /** Jumping back is only trusted when it's big (a real seek), not when it's network jitter. */
+    private static final long HARD_SYNC_BACK_MS = 3000;
 
     private String key;
     private boolean playing;
@@ -34,15 +37,15 @@ public final class PlaybackClock {
         }
         long estimate = rawPosition(now);
         long error = sample - estimate;
-        if (Math.abs(error) > HARD_SYNC_MS) {
-            hardSync(np, sample, now); // sarıldı
+        if (error > HARD_SYNC_MS || error < -HARD_SYNC_BACK_MS) {
+            hardSync(np, sample, now); // seeked
         } else {
-            anchorPos = estimate + error / 3; // yumuşak düzeltme
+            anchorPos = estimate + error / 3; // gentle correction
             anchorTime = now;
         }
     }
 
-    /** Şimdiki konum (ms). Çalarken asla bir önceki değerden küçük dönmez. */
+    /** Current position (ms). While playing, never smaller than the previously returned value. */
     public synchronized long positionAt(long now) {
         long p = rawPosition(now);
         if (playing) {

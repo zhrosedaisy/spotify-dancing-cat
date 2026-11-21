@@ -1,8 +1,8 @@
 package com.dancingcat.ui;
 
 public enum CatState {
-    /** Hiçbir şey çalmıyor. */
+    /** Nothing is playing. */
     SLEEPING,
-    /** Şarkı çalıyor, ritme göre dans. */
+    /** A song is playing: dance to the beat. */
     DANCING
 }

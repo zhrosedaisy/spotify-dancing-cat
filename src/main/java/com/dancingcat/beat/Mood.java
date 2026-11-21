@@ -1,10 +1,10 @@
 package com.dancingcat.beat;
 
-/** Şarkının enerjisine göre kedinin ruh hali. */
+/** The cat's mood, based on the song's energy. */
 public enum Mood {
-    CHILL("Sakin"),
-    GROOVE("Keyifli"),
-    HYPE("Coşkulu");
+    CHILL("Chill"),
+    GROOVE("Groove"),
+    HYPE("Hype");
 
     private final String label;
 

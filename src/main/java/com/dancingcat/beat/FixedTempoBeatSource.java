@@ -1,6 +1,6 @@
 package com.dancingcat.beat;
 
-/** Sabit BPM ile vuruş üretir. */
+/** Produces beats at a fixed BPM. */
 public final class FixedTempoBeatSource implements BeatSource {
 
     private final double bpm;

@@ -3,8 +3,8 @@ package com.dancingcat.ui;
 import java.awt.Color;
 
 /**
- * Butonların, balonların ve notaların renkleri. Albüm kapağının baskın renginden üretilir;
- * şarkı değişince eski temadan yenisine yumuşakça geçilir.
+ * Colors for buttons, bubbles and notes. Derived from the album cover's dominant color;
+ * when the song changes, the old theme fades smoothly into the new one.
  */
 public record Theme(Color buttonBg, Color buttonHover, Color accent, Color bubble, Color nextLine, Color[] notes) {
 
@@ -16,7 +16,7 @@ public record Theme(Color buttonBg, Color buttonHover, Color accent, Color bubbl
             new Color(0xC9, 0xBF, 0xDB),
             new Color[]{new Color(0xFF8FA3), new Color(0x8ECAE6), new Color(0xFFD166)});
 
-    /** Tek bir renkten uyumlu bir tema üretir. Renk çok griyse varsayılan temayı döner. */
+    /** Builds a matching theme from one color. Returns the default theme if the color is too gray. */
     public static Theme fromColor(Color base) {
         float[] hsb = Color.RGBtoHSB(base.getRed(), base.getGreen(), base.getBlue(), null);
         float h = hsb[0], s = hsb[1];
@@ -34,7 +34,7 @@ public record Theme(Color buttonBg, Color buttonHover, Color accent, Color bubbl
                         hsb(h - 0.12f, 0.5f, 0.95f, 255)});
     }
 
-    /** this → to arasında t (0..1) kadar ilerlemiş tema. */
+    /** The theme t (0..1) of the way from this to `to`. */
     public Theme lerp(Theme to, double t) {
         if (t <= 0) return this;
         if (t >= 1) return to;

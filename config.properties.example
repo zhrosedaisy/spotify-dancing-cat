@@ -1,7 +1,7 @@
-# Bu dosyayı config.properties adıyla kopyala ve değerleri doldur.
-spotify.clientId=BURAYA_CLIENT_ID
+# Copy this file to config.properties and fill in your values.
+spotify.clientId=YOUR_CLIENT_ID
 spotify.redirectUri=http://127.0.0.1:8888/callback
-# Canlı ritim (ses yakalama) yoksa kullanılan sabit tempo
+# Fixed tempo used when live beat detection (audio capture) isn't available
 dance.bpm=120
-# Kedinin boyutu: her pixel kaç ekran pikseli olsun (2 = minik, 3 = küçük, 5 = büyük)
+# Cat size: screen pixels per sprite pixel (2 = tiny, 3 = small, 5 = big)
 cat.scale=3

@@ -25,11 +25,11 @@ import java.util.Optional;
 import java.util.prefs.Preferences;
 
 /**
- * Kenarlıksız, şeffaf, her zaman üstte duran ve sürüklenebilen kedi penceresi.
+ * The borderless, transparent, always-on-top and draggable cat window.
  *
- * Konum her zaman "kedinin ekrandaki yeri" üzerinden hesaplanır. Kedi ekranın tepesine
- * yaklaşınca panel "flipped" yerleşime geçer (butonlar/sözler kedinin altına), böylece
- * pencere menü çubuğuna takılmadan kedi en üste kadar çıkabilir.
+ * Positions are always computed from "where the cat is on screen". When the cat gets close to
+ * the top of the screen the panel switches to the "flipped" layout (buttons/lyrics below the
+ * cat), so the cat can go all the way up without the window bumping into the menu bar.
  */
 public final class CatWindow {
 
@@ -47,7 +47,7 @@ public final class CatWindow {
         this.prefs = prefs;
         window.setAlwaysOnTop(true);
         window.setBackground(new Color(0, 0, 0, 0));
-        window.getRootPane().putClientProperty("Window.shadow", Boolean.FALSE); // macOS gölgesini kapat
+        window.getRootPane().putClientProperty("Window.shadow", Boolean.FALSE); // disable the macOS window shadow
         window.setContentPane(panel);
         window.pack();
         restorePosition();
@@ -69,21 +69,21 @@ public final class CatWindow {
         return window.getY() + panel.catBounds().y;
     }
 
-    /** Kediyi ekranda (pencere x'i, kedinin üst kenarı) noktasına yerleştirir. */
+    /** Places the cat at (window x, top edge of the cat) on screen. */
     private void placeCat(int windowX, int catY) {
         Rectangle screen = usableBounds(new Point(windowX + window.getWidth() / 2, catY));
-        // Kedi ekranın dışına kaçmasın
+        // keep the cat on screen
         catY = Math.max(screen.y, Math.min(catY, screen.y + screen.height - panel.catPixelSize() / 2));
         int minX = screen.x - (window.getWidth() - panel.catPixelSize()) / 2;
         int maxX = screen.x + screen.width - (window.getWidth() + panel.catPixelSize()) / 2;
         windowX = Math.max(minX, Math.min(windowX, maxX));
 
-        boolean flip = catY - panel.overlayHeight() < screen.y; // üstte yer yoksa butonlar alta
+        boolean flip = catY - panel.overlayHeight() < screen.y; // no room above -> buttons go below
         panel.setFlipped(flip);
         window.setLocation(windowX, flip ? catY : catY - panel.overlayHeight());
     }
 
-    /** Noktanın bulunduğu ekranın menü çubuğu / Dock hariç alanı. */
+    /** The area of the screen containing the point, excluding the menu bar / Dock. */
     private static Rectangle usableBounds(Point p) {
         for (GraphicsDevice device : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
             GraphicsConfiguration gc = device.getDefaultConfiguration();
@@ -151,11 +151,11 @@ public final class CatWindow {
         panel.addMouseMotionListener(mouse);
     }
 
-    /** Sol tık: butona basıldıysa komutu gönder; kediye basıldıysa butonları aç/kapat. */
+    /** Left click: on a button, send its command; on the cat, show/hide the buttons. */
     private void onClick(Point p) {
         Optional<Control> control = panel.controlAt(p);
         if (control.isPresent()) {
-            panel.showControls(); // basıldıkça açık kalsın
+            panel.showControls(); // stay open while being used
             if (control.get() != Control.LYRICS) panel.react();
             controller.onControl(control.get());
             return;
@@ -168,7 +168,7 @@ public final class CatWindow {
         panel.react();
     }
 
-    /** Kediye çift tıklama: şarkıyı beğen. İlk tıklamanın açıp kapadığı butonları geri al. */
+    /** Double-click on the cat: like the song. Undo the show/hide caused by the first click. */
     private void onDoubleClick(Point p) {
         if (!panel.catBounds().contains(p) || panel.controlAt(p).isPresent()) return;
         if (!controller.isSpotifyConnected()) return;
@@ -177,27 +177,27 @@ public final class CatWindow {
         controller.likeByDoubleClick();
     }
 
-    /** Sağ tık menüsü. */
+    /** Right-click menu. */
     private void showMenu(MouseEvent e) {
         JPopupMenu menu = new JPopupMenu();
         boolean connected = controller.isSpotifyConnected();
         if (controller.hasSpotify() && !connected) {
-            JMenuItem connect = new JMenuItem("Spotify'a bağlan");
+            JMenuItem connect = new JMenuItem("Connect to Spotify");
             connect.addActionListener(a -> controller.connectSpotify());
             menu.add(connect);
         }
-        JCheckBoxMenuItem lyrics = new JCheckBoxMenuItem("Şarkı sözlerini göster", controller.lyricsEnabled());
+        JCheckBoxMenuItem lyrics = new JCheckBoxMenuItem("Show lyrics", controller.lyricsEnabled());
         lyrics.addActionListener(a -> controller.setLyricsEnabled(lyrics.isSelected()));
         menu.add(lyrics);
-        JMenu timing = new JMenu("Söz zamanlaması");
-        JMenuItem earlier = new JMenuItem("Sözler geç kalıyor → 0,1 sn öne al");
+        JMenu timing = new JMenu("Lyric timing");
+        JMenuItem earlier = new JMenuItem("Lyrics are late → show 0.1 s earlier");
         earlier.addActionListener(a -> controller.nudgeLyricOffset(100));
-        JMenuItem later = new JMenuItem("Sözler erken geliyor → 0,1 sn geri al");
+        JMenuItem later = new JMenuItem("Lyrics are early → show 0.1 s later");
         later.addActionListener(a -> controller.nudgeLyricOffset(-100));
         timing.add(earlier);
         timing.add(later);
         menu.add(timing);
-        JMenu costumes = new JMenu("Kostüm");
+        JMenu costumes = new JMenu("Costume");
         ButtonGroup group = new ButtonGroup();
         for (Costume c : Costume.values()) {
             JRadioButtonMenuItem item = new JRadioButtonMenuItem(c.label(), c == controller.costume());
@@ -216,7 +216,7 @@ public final class CatWindow {
             menu.add(toggle);
         }
         menu.addSeparator();
-        JMenuItem quit = new JMenuItem("Çıkış");
+        JMenuItem quit = new JMenuItem("Quit");
         quit.addActionListener(a -> System.exit(0));
         menu.add(quit);
         menu.show(panel, e.getX(), e.getY());

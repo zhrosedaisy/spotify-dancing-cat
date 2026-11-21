@@ -31,22 +31,22 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Kediyi, kontrol butonlarını, şarkı adı balonunu ve şarkı sözlerini çizen panel.
+ * Draws the cat, the control buttons, the song-title bubble and the lyrics.
  *
- * Titremeyi önlemek için iki kural:
- *  1. Kare önce ekran dışındaki bir resme (canvas) çizilir, sonra tek seferde pencereye basılır.
- *  2. Sadece görüntü gerçekten değiştiğinde yeniden çizilir (Scene karşılaştırması).
+ * Two rules keep the transparent window flicker-free:
+ *  1. Each frame is rendered into an off-screen image (canvas) first, then copied to the window in one go.
+ *  2. We only repaint when the picture actually changes (Scene comparison).
  *
- * Yerleşim: normalde kedi altta, butonlar/sözler üstünde. Kedi ekranın tepesine taşınınca
- * ("flipped") kedi üste geçer, butonlar/sözler altına çizilir. Böylece kedi menü çubuğunun
- * hemen altına kadar çıkabilir.
+ * Layout: normally the cat sits at the bottom with buttons/lyrics above it. When the cat is
+ * dragged to the top of the screen ("flipped"), the cat moves up and buttons/lyrics are drawn
+ * below it, so the cat can sit right under the menu bar.
  */
 public final class CatPanel extends JPanel {
 
     private static final long REACTION_MS = 700;
     private static final int REACTION_STEPS = 14;
-    private static final long PARTICLE_STEP_MS = 125;  // Z'ler ve notalar ~8 FPS, pixel-art hissi
-    private static final long CONTROLS_MS = 5000;      // butonlar son etkileşimden 5 sn sonra kaybolur
+    private static final long PARTICLE_STEP_MS = 125;  // Zs and notes move at ~8 FPS for a pixel-art feel
+    private static final long CONTROLS_MS = 5000;      // buttons hide 5 s after the last interaction
     private static final long TOAST_MS = 3500;
     private static final long TOAST_FADE_MS = 500;
     private static final int TOAST_FADE_STEPS = 6;
@@ -75,7 +75,7 @@ public final class CatPanel extends JPanel {
     private volatile boolean flipped;
     private volatile boolean lyricsEnabled;
     private volatile Lyrics lyrics;
-    private volatile long lyricOffsetMs = 400; // pozitif = sözleri daha erken göster
+    private volatile long lyricOffsetMs = 400; // positive = show lyrics earlier
     private volatile Costume costume = Costume.NONE;
     private volatile Mood mood = Mood.GROOVE;
     private volatile boolean liked;
@@ -84,30 +84,30 @@ public final class CatPanel extends JPanel {
     private volatile Theme themeFrom = Theme.DEFAULT;
     private volatile Theme themeTo = Theme.DEFAULT;
     private volatile long themeChangeStart;
-    private Theme paintTheme = Theme.DEFAULT; // çizim sırasında kullanılan (geçişte ara) tema
+    private Theme paintTheme = Theme.DEFAULT; // theme used while painting (in-between during a transition)
     private final PlaybackClock clock = new PlaybackClock();
 
     private Scene scene;
     private BufferedImage canvas;
 
-    /** Dans karesindeki ek hareket (kayma, dönme, ayna). */
+    /** Extra motion for a dance frame (offset, rotation, mirroring). */
     private record Fx(int dx, int dy, int rotStep, boolean mirror) {
         static final Fx NONE = new Fx(0, 0, 0, false);
     }
 
     /**
-     * Sözlerin o anki hali. Satır değişince step 0'dan LYRIC_ANIM_STEPS'e kadar ilerler;
-     * bu sürede önceki satır (previous) yukarı kayıp kaybolurken yenisi aşağıdan gelir.
+     * The current lyrics state. When the line changes, step runs from 0 to LYRIC_ANIM_STEPS;
+     * meanwhile the previous line slides up and fades out while the new one slides in from below.
      */
     private record LyricFrame(int index, String previous, String current, String next, int step) {}
 
-    /** Ekranda ne olduğunu tarif eder; değişmediyse yeniden çizmeye gerek yok. */
+    /** Describes what is on screen; if it didn't change, there is no need to repaint. */
     private record Scene(String kind, Pose pose, Fx fx, int breath, int tick,
                          boolean controls, Control hover, boolean playing, boolean lyricsOn,
                          String toast, int toastFade, LyricFrame lyric, boolean flipped,
                          Costume costume, Mood mood, boolean liked, Theme theme, int themeStep) {}
 
-    /** Panel içindeki bölgeler. */
+    /** Regions inside the panel. */
     private record Layout(Rectangle cat, int buttonsY, int toastY, int lyricsAnchorY,
                           boolean lyricsGrowUp, int lyricsMaxH) {}
 
@@ -124,7 +124,7 @@ public final class CatPanel extends JPanel {
         new Timer(30, e -> tick()).start();
     }
 
-    // ---------------------------------------------------------------- durum
+    // ---------------------------------------------------------------- state
 
     public CatState state() { return state; }
 
@@ -162,13 +162,13 @@ public final class CatPanel extends JPanel {
 
     public void setLiked(boolean liked) { this.liked = liked; }
 
-    /** Drop algılandı: dev zıplama + takla + yıldızlar. */
+    /** A drop was detected: giant jump + flip + stars. */
     public void triggerDrop() { dropStart = System.currentTimeMillis(); }
 
-    /** Şarkı beğenildi: kalp yağmuru. */
+    /** The song was liked: a burst of hearts. */
     public void triggerLike() { likeStart = System.currentTimeMillis(); }
 
-    /** Yeni temaya (albüm rengi) yumuşak geçiş başlatır. */
+    /** Starts a smooth transition to a new (album-color) theme. */
     public void setTheme(Theme theme) {
         long now = System.currentTimeMillis();
         themeFrom = currentTheme(now);
@@ -184,7 +184,7 @@ public final class CatPanel extends JPanel {
         return themeFrom.lerp(themeTo, themeStep(now) / (double) THEME_STEPS);
     }
 
-    /** Kedi üstteyse true: butonlar/sözler kedinin altına çizilir. */
+    /** True when the cat is near the top: buttons/lyrics are drawn below it. */
     public void setFlipped(boolean flipped) {
         if (this.flipped != flipped) {
             this.flipped = flipped;
@@ -192,7 +192,7 @@ public final class CatPanel extends JPanel {
         }
     }
 
-    /** Butonlar/sözler için ayrılan alanın yüksekliği. */
+    /** Height of the area reserved for buttons/lyrics. */
     public int overlayHeight() { return overlayPx; }
 
     public int catPixelSize() { return catPx; }
@@ -207,7 +207,7 @@ public final class CatPanel extends JPanel {
                 .findFirst();
     }
 
-    // ---------------------------------------------------------------- yerleşim
+    // ---------------------------------------------------------------- layout
 
     private Layout currentLayout() {
         int w = getWidth() > 0 ? getWidth() : getPreferredSize().width;
@@ -216,15 +216,15 @@ public final class CatPanel extends JPanel {
         int toastH = 7 * scale;
         if (!flipped) {
             int catY = h - catPx;
-            int buttonsY = catY + 7 * scale - buttonPx;   // kafanın hemen üstü
+            int buttonsY = catY + 7 * scale - buttonPx;   // right above the head
             int toastY = 2;
-            int anchor = buttonsY - 2 * scale;            // sözler aşağıdan yukarı büyür
+            int anchor = buttonsY - 2 * scale;            // lyrics grow upwards
             return new Layout(new Rectangle(catX, catY, catPx, catPx), buttonsY, toastY,
                     anchor, true, anchor - (toastY + toastH + 2 * scale));
         }
-        int buttonsY = catPx + scale;                     // kedinin hemen altı
+        int buttonsY = catPx + scale;                     // right below the cat
         int toastY = h - toastH - 2;
-        int anchor = buttonsY + buttonPx + 2 * scale;     // sözler yukarıdan aşağı büyür
+        int anchor = buttonsY + buttonPx + 2 * scale;     // lyrics grow downwards
         return new Layout(new Rectangle(catX, 0, catPx, catPx), buttonsY, toastY,
                 anchor, false, toastY - 2 * scale - anchor);
     }
@@ -242,7 +242,7 @@ public final class CatPanel extends JPanel {
         return map;
     }
 
-    // ---------------------------------------------------------------- sahne
+    // ---------------------------------------------------------------- scene
 
     private void tick() {
         Scene next = sceneAt(System.currentTimeMillis());
@@ -276,7 +276,7 @@ public final class CatPanel extends JPanel {
         Theme theme = themeTo;
         int ts = themeStep(now);
 
-        // Öncelik: drop > beğeni > tıklama tepkisi > dans > boşta hareket > uyku
+        // Priority: drop > like > click reaction > dance > idle action > sleep
         if (dropStart >= 0) {
             int step = (int) ((now - dropStart) * DROP_STEPS / DROP_MS);
             if (step <= DROP_STEPS) {
@@ -321,12 +321,12 @@ public final class CatPanel extends JPanel {
     private LyricFrame lyricAt(long now) {
         Lyrics l = lyrics;
         if (!lyricsEnabled || l == null) return null;
-        if (l.instrumental()) return new LyricFrame(0, null, "♪ enstrümantal ♪", null, LYRIC_ANIM_STEPS);
+        if (l.instrumental()) return new LyricFrame(0, null, "♪ instrumental ♪", null, LYRIC_ANIM_STEPS);
 
         long ms = clock.positionAt(now) + lyricOffsetMs;
         int i = l.indexAt(ms);
         List<Lyrics.Line> lines = l.lines();
-        if (i < 0) { // ilk satırdan önce: girişi göster, ilk satırı önizle
+        if (i < 0) { // before the first line: show the intro and preview the first line
             return new LyricFrame(-1, null, "♪ ♪ ♪", lineText(lines, 0), LYRIC_ANIM_STEPS);
         }
         String previous = i > 0 ? displayText(lines.get(i - 1).text()) : "♪ ♪ ♪";
@@ -344,7 +344,7 @@ public final class CatPanel extends JPanel {
         return i < lines.size() && !lines.get(i).text().isBlank() ? lines.get(i).text() : null;
     }
 
-    // ---------------------------------------------------------------- çizim
+    // ---------------------------------------------------------------- painting
 
     @Override
     protected void paintComponent(Graphics g) {
@@ -356,7 +356,7 @@ public final class CatPanel extends JPanel {
         renderScene(scene, canvas);
 
         Graphics2D g2 = (Graphics2D) g.create();
-        g2.setComposite(AlphaComposite.Src); // tüm pikselleri tek seferde değiştir
+        g2.setComposite(AlphaComposite.Src); // replace all pixels in one go
         g2.drawImage(canvas, 0, 0, null);
         g2.dispose();
     }
@@ -373,7 +373,7 @@ public final class CatPanel extends JPanel {
         Fx fx = s.fx();
         paintTheme = themeFrom.lerp(s.theme(), s.themeStep() / (double) THEME_STEPS);
 
-        // Gölge (zıplarken küçülür)
+        // Shadow (shrinks while jumping)
         double shrink = 1 - Math.min(0.5, Math.abs(fx.dy()) / 16.0);
         int sw = (int) (20 * scale * shrink);
         g2.setColor(new Color(0, 0, 0, 50));
@@ -405,7 +405,7 @@ public final class CatPanel extends JPanel {
         int y = cat.y + fx.dy() * scale;
         AffineTransform old = g2.getTransform();
         if (fx.rotStep() != 0) {
-            // Gövdenin ortası etrafında döndür
+            // rotate around the middle of the body
             g2.rotate(Math.toRadians(fx.rotStep() * 30), x + catPx / 2.0, y + 20 * scale);
         }
         if (fx.mirror()) g2.drawImage(frame, x + catPx, y, -catPx, catPx, null);
@@ -440,7 +440,7 @@ public final class CatPanel extends JPanel {
         int pad = 2 * scale;
         int maxTextW = getWidth() - 2 * pad - 6;
 
-        // Geçiş sırasında: eski blok (önceki satır + önizlemesi) → yeni blok. Balon boyutu yumuşakça değişir.
+        // During a transition: old block (previous line + its preview) -> new block. The bubble resizes smoothly.
         double a = smooth(lf.step() / (double) LYRIC_ANIM_STEPS);
         LyricBlock cur = layoutBlock(lf.current(), lf.next(), fmCur, fmNext, maxTextW, pad, l.lyricsMaxH());
         LyricBlock prev = lf.previous() == null ? null
@@ -450,7 +450,7 @@ public final class CatPanel extends JPanel {
         int x = (getWidth() - w) / 2;
         int y = l.lyricsGrowUp() ? l.lyricsAnchorY() - h : l.lyricsAnchorY();
 
-        // Balon + kediyi gösteren küçük kuyruk
+        // Bubble + a small tail pointing at the cat
         g2.setColor(paintTheme.bubble());
         g2.fillRoundRect(x, y, w, h, 4 * scale, 4 * scale);
         int cx = getWidth() / 2, t = 2 * scale;
@@ -459,8 +459,8 @@ public final class CatPanel extends JPanel {
                 : new Polygon(new int[]{cx - t, cx + t, cx}, new int[]{y, y, y - t}, 3);
         g2.fill(tail);
 
-        // Eski satır yukarı kayıp kaybolurken yenisi aşağıdan kayıp belirir (hiçbir an boş kalmaz)
-        // (eski satır geçişin ilk %60'ında söner, yenisi %30'dan sonra belirir → üst üste binme az)
+        // The old line slides up and fades out while the new one slides in from below (never empty).
+        // (the old line is gone after 60% of the transition, the new one appears after 30% -> little overlap)
         int travel = 9 * scale;
         Shape oldClip = g2.getClip();
         g2.clipRect(x, y, w, h);
@@ -476,7 +476,7 @@ public final class CatPanel extends JPanel {
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
     }
 
-    /** Ölçülmüş bir söz bloğu: ana satır(lar) + soluk önizleme satırı. */
+    /** A measured lyric block: main line(s) + a dimmed preview line. */
     private record LyricBlock(List<String> lines, String next, int w, int h) {}
 
     private LyricBlock layoutBlock(String text, String nextText, FontMetrics fmCur, FontMetrics fmNext,
@@ -485,7 +485,7 @@ public final class CatPanel extends JPanel {
         String next = nextText == null ? null : ellipsize(nextText, fmNext, maxTextW);
         int curH = lines.size() * fmCur.getHeight();
         int h = pad + curH + (next != null ? fmNext.getHeight() + scale : 0) + pad;
-        if (h > maxH && next != null) { // sığmıyorsa önizlemeyi gösterme
+        if (h > maxH && next != null) { // drop the preview if it doesn't fit
             next = null;
             h = pad + curH + pad;
         }
@@ -515,7 +515,7 @@ public final class CatPanel extends JPanel {
         }
     }
 
-    /** Yumuşak başlayıp yumuşak biten geçiş eğrisi (0..1). */
+    /** Ease-in-out curve (0..1). */
     private static double smooth(double t) {
         t = Math.max(0, Math.min(1, t));
         return t * t * (3 - 2 * t);
@@ -542,7 +542,7 @@ public final class CatPanel extends JPanel {
     }
 
     private void drawNotes(Graphics2D g2, Rectangle cat, int tick, Mood mood) {
-        double cycle = (mood == Mood.HYPE ? 1400.0 : 2000.0) / PARTICLE_STEP_MS; // bir notanın yükselme süresi
+        double cycle = (mood == Mood.HYPE ? 1400.0 : 2000.0) / PARTICLE_STEP_MS; // how long one note takes to rise
         int ns = Math.max(1, scale - 1);
         int count = switch (mood) { case CHILL -> 1; case GROOVE -> 2; case HYPE -> 3; };
         for (int i = 0; i < count; i++) {
@@ -556,13 +556,13 @@ public final class CatPanel extends JPanel {
             Color[] colors = paintTheme.notes();
             BufferedImage note = CatSprites.note(colors[Math.floorMod(round + i, colors.length)].getRGB() | 0xFF000000);
             g2.setComposite(AlphaComposite.SrcOver.derive(alpha));
-            g2.drawImage(CatSprites.note(0xFF3A3346), x + 1, y + 1, 6 * ns, 7 * ns, null); // gölge
+            g2.drawImage(CatSprites.note(0xFF3A3346), x + 1, y + 1, 6 * ns, 7 * ns, null); // shadow
             g2.drawImage(note, x, y, 6 * ns, 7 * ns, null);
         }
         g2.setComposite(AlphaComposite.SrcOver);
     }
 
-    /** Drop: kediden etrafa saçılan yıldızlar. t = 0..1 */
+    /** Drop: stars bursting out from the cat. t = 0..1 */
     private void drawStars(Graphics2D g2, Rectangle cat, double t) {
         int cx = cat.x + catPx / 2, cy = cat.y + 18 * scale;
         int s = Math.max(1, scale - 1);
@@ -579,16 +579,16 @@ public final class CatPanel extends JPanel {
         g2.setComposite(AlphaComposite.SrcOver);
     }
 
-    /** Beğeni: kedinin etrafından yükselen kalpler. t = 0..1 */
+    /** Like: hearts rising around the cat. t = 0..1 */
     private void drawHeartBurst(Graphics2D g2, Rectangle cat, double t) {
         BufferedImage heart = CatSprites.heart();
         int s = Math.max(1, scale - 1);
-        int[] xs = {-15, -9, 9, 15, 0}; // yanlardan yükselsin, yüzü kapatmasın
+        int[] xs = {-15, -9, 9, 15, 0}; // rise from the sides so they don't cover the face
         g2.setComposite(AlphaComposite.SrcOver.derive((float) Math.max(0, 1 - t * t)));
         for (int i = 0; i < xs.length; i++) {
             double ti = Math.max(0, t - i * 0.06);
             int x = cat.x + catPx / 2 + xs[i] * scale + (int) (Math.sin(ti * 8 + i) * scale) - heart.getWidth() * s / 2;
-            int startY = xs[i] == 0 ? 2 : 14 - (i % 2) * 3; // ortadaki kalp kafanın üstünden
+            int startY = xs[i] == 0 ? 2 : 14 - (i % 2) * 3; // the middle heart starts above the head
             int y = cat.y + startY * scale - (int) (ti * 14 * scale);
             g2.drawImage(heart, x, y, heart.getWidth() * s, heart.getHeight() * s, null);
         }
@@ -596,7 +596,7 @@ public final class CatPanel extends JPanel {
     }
 
     private void drawZzz(Graphics2D g2, Rectangle cat, int tick) {
-        double cycle = 3000.0 / PARTICLE_STEP_MS; // bir Z'nin yükselmesi 3 sn
+        double cycle = 3000.0 / PARTICLE_STEP_MS; // one Z takes 3 s to rise
         for (int i = 0; i < 3; i++) {
             double t = ((tick / cycle) + i / 3.0) % 1.0;
             int x = cat.x + 15 * scale + (int) (t * 6 * scale) + i * 2;
@@ -620,9 +620,9 @@ public final class CatPanel extends JPanel {
         g2.setComposite(AlphaComposite.SrcOver);
     }
 
-    // ---------------------------------------------------------------- yazı yardımcıları
+    // ---------------------------------------------------------------- text helpers
 
-    /** Metni en fazla maxLines satıra böler, sığmayanı "…" ile keser. */
+    /** Wraps text into at most maxLines lines, cutting the rest with "…". */
     private static List<String> wrap(String text, FontMetrics fm, int maxWidth, int maxLines) {
         List<String> out = new ArrayList<>();
         StringBuilder line = new StringBuilder();
@@ -633,7 +633,7 @@ public final class CatPanel extends JPanel {
                 line = new StringBuilder(candidate);
             } else {
                 out.add(line.toString());
-                if (out.size() == maxLines - 1) { // son satır: kalan her şey
+                if (out.size() == maxLines - 1) { // last line: everything that is left
                     StringBuilder rest = new StringBuilder(words[i]);
                     for (int j = i + 1; j < words.length; j++) rest.append(' ').append(words[j]);
                     out.add(ellipsize(rest.toString(), fm, maxWidth));

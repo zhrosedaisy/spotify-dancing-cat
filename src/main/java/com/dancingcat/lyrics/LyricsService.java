@@ -24,9 +24,9 @@ import java.util.stream.Collectors;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
- * Şarkı sözlerini LRCLIB'den (lrclib.net, ücretsiz, anahtar gerektirmez) çeker.
- * Önce birebir eşleşme (/api/get), bulamazsa arama (/api/search) dener.
- * Sonuçlar bellekte saklanır, aynı şarkı için tekrar istek atılmaz.
+ * Fetches lyrics from LRCLIB (lrclib.net – free, no API key needed).
+ * Tries an exact match first (/api/get), then falls back to a search (/api/search).
+ * Results are cached in memory so the same song is never requested twice.
  */
 public final class LyricsService {
 
@@ -41,7 +41,7 @@ public final class LyricsService {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final Map<String, Optional<Lyrics>> cache = new ConcurrentHashMap<>();
 
-    /** Boş Optional = senkronize söz bulunamadı. */
+    /** Empty Optional = no synced lyrics found. */
     public CompletableFuture<Optional<Lyrics>> fetch(NowPlaying track) {
         Optional<Lyrics> cached = cache.get(track.key());
         if (cached != null) return CompletableFuture.completedFuture(cached);
@@ -73,7 +73,7 @@ public final class LyricsService {
             if (lyrics.isPresent()) return lyrics;
         }
 
-        // Birebir bulunamadı → arama yap, süresi en yakın ve senkron sözü olanı seç
+        // No exact match -> search and pick the result with synced lyrics and the closest duration
         Map<String, String> search = new LinkedHashMap<>();
         search.put("track_name", track.title());
         search.put("artist_name", track.primaryArtist());

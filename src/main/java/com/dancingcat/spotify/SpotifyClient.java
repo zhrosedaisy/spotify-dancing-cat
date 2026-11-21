@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** Spotify Web API çağrıları. */
+/** Spotify Web API calls. */
 public final class SpotifyClient {
 
     private static final String API = "https://api.spotify.com/v1";
@@ -26,7 +26,7 @@ public final class SpotifyClient {
         this.http = http;
     }
 
-    /** Boş Optional = hiçbir cihazda bir şey çalmıyor. */
+    /** Empty Optional = nothing is playing on any device. */
     public Optional<NowPlaying> currentlyPlaying() throws IOException, InterruptedException {
         long sentAt = System.currentTimeMillis();
         HttpResponse<String> response = send("GET", "/me/player/currently-playing");
@@ -36,11 +36,11 @@ public final class SpotifyClient {
         JsonNode root = json.readTree(response.body());
         boolean playing = root.path("is_playing").asBoolean(false);
         long progress = root.path("progress_ms").asLong(0);
-        // Spotify konumu isteğin yaklaşık ortasında ölçtü; gidiş-dönüş süresinin yarısını telafi et
+        // Spotify measured the position roughly mid-request; compensate for half the round trip
         long now = (sentAt + receivedAt) / 2;
         JsonNode item = root.path("item");
         if (item.isMissingNode() || item.isNull()) {
-            return Optional.of(new NowPlaying(null, "(bilinmeyen içerik)", "", "", "", null, 0, progress, playing, now));
+            return Optional.of(new NowPlaying(null, "(unknown content)", "", "", "", null, 0, progress, playing, now));
         }
         List<String> artists = new ArrayList<>();
         item.path("artists").forEach(a -> artists.add(a.path("name").asText()));
@@ -55,7 +55,7 @@ public final class SpotifyClient {
                 progress, playing, now));
     }
 
-    /** Albüm kapaklarının en küçüğü (renk çıkarmak için 64 px yeter). */
+    /** The smallest album cover (64 px is enough to pick a color). */
     private static String smallestImage(JsonNode images) {
         String url = null;
         int best = Integer.MAX_VALUE;
@@ -69,7 +69,7 @@ public final class SpotifyClient {
         return url;
     }
 
-    // ---- Kütüphane (Beğenilen Şarkılar). Şubat 2026'dan beri tek uç: /me/library?uris=spotify:track:ID
+    // ---- Library (Liked Songs). Since February 2026 a single endpoint: /me/library?uris=spotify:track:ID
 
     public boolean isSaved(String trackId) throws IOException, InterruptedException {
         HttpResponse<String> r = send("GET", "/me/library/contains?uris=" + trackUri(trackId));
@@ -89,7 +89,7 @@ public final class SpotifyClient {
         return java.net.URLEncoder.encode("spotify:track:" + trackId, java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    // Kontroller (Premium gerekir)
+    // Playback controls (Premium required)
     public void next() throws IOException, InterruptedException { send("POST", "/me/player/next"); }
 
     public void previous() throws IOException, InterruptedException { send("POST", "/me/player/previous"); }
@@ -100,17 +100,17 @@ public final class SpotifyClient {
 
     private HttpResponse<String> send(String method, String path) throws IOException, InterruptedException {
         HttpResponse<String> response = sendOnce(method, path);
-        if (response.statusCode() == 401) { // token süresi dolmuş olabilir → yenile ve bir kez daha dene
+        if (response.statusCode() == 401) { // the token may have expired -> refresh and retry once
             auth.refresh();
             response = sendOnce(method, path);
         }
         int status = response.statusCode();
         if (status == 429) {
             int retry = response.headers().firstValue("Retry-After").map(Integer::parseInt).orElse(5);
-            throw new SpotifyException("Spotify çok fazla istek dedi, " + retry + " sn bekleniyor", 429, retry);
+            throw new SpotifyException("Spotify says too many requests, waiting " + retry + " s", 429, retry);
         }
         if (status >= 400) {
-            throw new SpotifyException("Spotify hatası (" + status + "): " + response.body(), status, 0);
+            throw new SpotifyException("Spotify error (" + status + "): " + response.body(), status, 0);
         }
         return response;
     }

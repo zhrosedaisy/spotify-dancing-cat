@@ -1,6 +1,6 @@
 package com.dancingcat.ui;
 
-/** Kedinin üstündeki kontrol butonları (soldan sağa). */
+/** The control buttons above the cat (left to right). */
 public enum Control {
     PREVIOUS, PLAY_PAUSE, NEXT, LIKE, LYRICS
 }

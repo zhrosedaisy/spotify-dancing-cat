@@ -15,8 +15,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * Spotify bağlantısının tamamı: giriş + saniyede bir "ne çalıyor?" sorgusu.
- * Sonuç her seferinde listener'a iletilir (boş Optional = hiçbir şey çalmıyor).
+ * Everything about the Spotify connection: login + asking "what's playing?" once per second.
+ * Each result is passed to the listener (empty Optional = nothing is playing).
  */
 public final class SpotifyService {
 
@@ -52,15 +52,15 @@ public final class SpotifyService {
         return client;
     }
 
-    /** Gerekirse tarayıcıda giriş açar, sonra dinlemeye başlar. Arka planda çalışır. */
+    /** Opens the browser login if needed, then starts polling. Runs in the background. */
     public void connectAsync() {
         Thread.ofVirtual().name("spotify-login").start(() -> {
             if (!auth.isLoggedIn()) {
-                if (!loggingIn.compareAndSet(false, true)) return; // zaten giriş bekleniyor
+                if (!loggingIn.compareAndSet(false, true)) return; // a login is already in progress
                 try {
                     auth.login();
                 } catch (IOException e) {
-                    System.err.println("Spotify girişi başarısız: " + e.getMessage());
+                    System.err.println("Spotify login failed: " + e.getMessage());
                     return;
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -75,7 +75,7 @@ public final class SpotifyService {
         });
     }
 
-    // ---- Kontroller (Premium gerekir). Hepsi aynı arka plan iş parçacığında, sırayla çalışır. ----
+    // ---- Playback controls (Premium required). All run in order on the same background thread. ----
 
     public CompletableFuture<Void> previous() { return runAction(client::previous); }
 
@@ -88,7 +88,7 @@ public final class SpotifyService {
         });
     }
 
-    // ---- Beğenilen Şarkılar
+    // ---- Liked Songs
 
     public CompletableFuture<Boolean> isSaved(String trackId) {
         return call(() -> client.isSaved(trackId));
@@ -106,7 +106,7 @@ public final class SpotifyService {
         T run() throws IOException, InterruptedException;
     }
 
-    /** Spotify iş parçacığında çalıştırıp sonucu döner. */
+    /** Runs the call on the Spotify thread and returns the result. */
     private <T> CompletableFuture<T> call(Call<T> call) {
         CompletableFuture<T> result = new CompletableFuture<>();
         scheduler.execute(() -> {
@@ -133,28 +133,28 @@ public final class SpotifyService {
                 result.completeExceptionally(e);
             }
         });
-        // Spotify'ın durumu güncellemesi için kısa bir süre bekleyip hemen tekrar sor
+        // give Spotify a moment to update its state, then ask again right away
         scheduler.schedule(this::poll, 400, TimeUnit.MILLISECONDS);
         return result;
     }
 
-    /** Hataları kullanıcıya gösterilebilecek kısa bir mesaja çevirir. */
+    /** Turns errors into a short message that can be shown to the user. */
     public static String friendlyError(Throwable t) {
         Throwable e = t instanceof CompletionException && t.getCause() != null ? t.getCause() : t;
         if (e instanceof SpotifyException se) {
             return switch (se.status()) {
-                case 404 -> "Aktif cihaz yok, önce Spotify'ı aç";
-                case 403 -> "Spotify izin vermedi";
-                case 429 -> "Biraz yavaş, tekrar dene";
-                default -> "Spotify hatası";
+                case 404 -> "No active device – open Spotify first";
+                case 403 -> "Spotify didn't allow that";
+                case 429 -> "Slow down a bit, try again";
+                default -> "Spotify error";
             };
         }
-        return "Bağlantı hatası";
+        return "Connection error";
     }
 
     private void poll() {
         if (System.currentTimeMillis() < pausedUntil) return;
-        if (!auth.isLoggedIn()) { // izin geri alınmışsa
+        if (!auth.isLoggedIn()) { // access was revoked
             listener.accept(Optional.empty());
             return;
         }
@@ -168,10 +168,10 @@ public final class SpotifyService {
             if (e.retryAfterSeconds() > 0) pausedUntil = System.currentTimeMillis() + e.retryAfterSeconds() * 1000L;
             logError(e.getMessage());
         } catch (IOException e) {
-            logError("Bağlantı hatası: " + e.getMessage());
+            logError("Connection error: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-        } catch (RuntimeException e) { // zamanlayıcı ölmesin
+        } catch (RuntimeException e) { // keep the scheduler alive
             logError("Beklenmeyen hata: " + e);
         }
     }
@@ -180,7 +180,7 @@ public final class SpotifyService {
         String label = now.map(NowPlaying::label).orElse(null);
         Boolean playing = now.map(NowPlaying::playing).orElse(false);
         if (!Objects.equals(label, lastLabel) || !Objects.equals(playing, lastPlaying)) {
-            System.out.println(label == null ? "⏹  Hiçbir şey çalmıyor"
+            System.out.println(label == null ? "⏹  Nothing playing"
                     : (playing ? "▶  " : "⏸  ") + label);
             lastLabel = label;
             lastPlaying = playing;
@@ -188,7 +188,7 @@ public final class SpotifyService {
     }
 
     private void logError(String message) {
-        if (!message.equals(lastError)) System.err.println(message); // aynı hatayı her saniye basma
+        if (!message.equals(lastError)) System.err.println(message); // don't print the same error every second
         lastError = message;
     }
 }

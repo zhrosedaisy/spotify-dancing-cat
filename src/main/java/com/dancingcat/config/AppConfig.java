@@ -7,10 +7,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-/** config.properties dosyasındaki ayarlar. */
+/** Settings from config.properties. */
 public record AppConfig(String spotifyClientId, String spotifyRedirectUri, double danceBpm, int catScale) {
 
-    private static final String PLACEHOLDER = "BURAYA_CLIENT_ID";
+    private static final String PLACEHOLDER = "YOUR_CLIENT_ID";
 
     public static AppConfig load(Path file) {
         Properties props = new Properties();
@@ -18,11 +18,11 @@ public record AppConfig(String spotifyClientId, String spotifyRedirectUri, doubl
             try (Reader in = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                 props.load(in);
             } catch (IOException e) {
-                System.err.println("config.properties okunamadı: " + e.getMessage());
+                System.err.println("Could not read config.properties: " + e.getMessage());
             }
         } else {
-            System.err.println("Uyarı: " + file.toAbsolutePath()
-                    + " yok. config.properties.example dosyasını kopyalayıp doldur.");
+            System.err.println("Warning: " + file.toAbsolutePath()
+                    + " not found. Copy config.properties.example and fill it in.");
         }
         return new AppConfig(
                 props.getProperty("spotify.clientId", PLACEHOLDER).trim(),

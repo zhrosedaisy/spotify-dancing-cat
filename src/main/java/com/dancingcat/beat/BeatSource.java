@@ -1,11 +1,11 @@
 package com.dancingcat.beat;
 
 /**
- * Ritim kaynağı. Kedi her karede buna "şu an kaçıncı vuruştayız?" diye sorar.
- * Şimdilik sabit tempo var; ileride ses analizi yapan bir uygulaması gelecek.
+ * A source of beats. Every frame the cat asks it "which beat are we on right now?".
+ * Implemented by a fixed-tempo source and by the live BeatTracker.
  */
 public interface BeatSource {
 
-    /** Başlangıçtan beri geçen vuruş sayısı (ör. 3.5 = dördüncü vuruşun ortası). */
+    /** Number of beats since the start (e.g. 3.5 = halfway through the fourth beat). */
     double beatPosition(long nowMillis);
 }

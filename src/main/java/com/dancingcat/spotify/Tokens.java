@@ -1,4 +1,4 @@
 package com.dancingcat.spotify;
 
-/** tokens.json içinde saklanan erişim bilgileri. */
+/** Credentials stored in tokens.json. */
 public record Tokens(String accessToken, String refreshToken, long expiresAtMillis, String scope) {}

@@ -1,14 +1,14 @@
 package com.dancingcat.ui;
 
 /**
- * Kedinin kostümleri. Her biri kafanın sol üst köşesine göre (offsetX, offsetY) kaydırılarak
- * kafanın üstüne damgalanır, bu yüzden dans, takla ve uyurken de kediyle birlikte hareket eder.
- * Harfler CatSprites paletindeki renklerdir ('.' = boş).
+ * The cat's costumes. Each one is stamped onto the head, offset (offsetX, offsetY) from the head's
+ * top-left corner, so it moves with the cat while dancing, flipping and sleeping.
+ * Letters are colors from the CatSprites palette ('.' = transparent).
  */
 public enum Costume {
-    NONE("Kostüm yok", 0, 0, null),
+    NONE("No costume", 0, 0, null),
 
-    PARTY_HAT("Parti şapkası", 0, -4, new String[]{
+    PARTY_HAT("Party hat", 0, -4, new String[]{
             ".......RR.......",
             ".......KK.......",
             "......KYYK......",
@@ -19,7 +19,7 @@ public enum Costume {
             "....KKKKKKKK....",
     }),
 
-    CROWN("Taç", 0, -2, new String[]{
+    CROWN("Crown", 0, -2, new String[]{
             "....K..KK..K....",
             "....KYKYYKYK....",
             "....KYYYYYYK....",
@@ -27,14 +27,14 @@ public enum Costume {
             "....KKKKKKKK....",
     }),
 
-    SUNGLASSES("Güneş gözlüğü", 0, 6, new String[]{
+    SUNGLASSES("Sunglasses", 0, 6, new String[]{
             "KKKKKK....KKKKKK",
             ".KSSGKKKKKKSSGK.",
             ".KSSSK....KSSSK.",
             "..KKK......KKK..",
     }),
 
-    HEADPHONES("Kulaklık", -2, -1, new String[]{
+    HEADPHONES("Headphones", -2, -1, new String[]{
             "......KKKKKKKK......",
             ".....KMMMMMMMMK.....",
             "....KMK......KMK....",
@@ -48,7 +48,7 @@ public enum Costume {
             "KKKK............KKKK",
     }),
 
-    BOW("Fiyonk", 11, -1, new String[]{
+    BOW("Bow", 11, -1, new String[]{
             "KK.KK",
             "KRKRK",
             "KK.KK",

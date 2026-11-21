@@ -6,9 +6,9 @@ import com.dancingcat.ui.CatSprites.Pose;
 import java.util.Random;
 
 /**
- * Müzik yokken kedi hep uyumasın: arada bir uyanıp küçük bir şey yapsın.
- * Zaman 25 saniyelik dilimlere bölünür; her dilimin ortasında 4 saniyelik bir hareket olur.
- * Hangi hareketin olacağı dilim numarasından türetilir (aynı an → aynı kare, titreme yok).
+ * When there's no music the cat shouldn't just sleep: every now and then it wakes up for a bit.
+ * Time is split into 25-second slots; in the middle of each slot there is a 4-second action.
+ * Which action is derived from the slot number (same moment -> same frame, no flicker).
  */
 public final class IdleBehavior {
 
@@ -20,7 +20,7 @@ public final class IdleBehavior {
 
     private IdleBehavior() {}
 
-    /** O an yapılan hareketin pozu; uyku zamanıysa null. */
+    /** The pose of the current action; null when it's time to sleep. */
     public static Pose at(long nowMillis) {
         long slot = nowMillis / SLOT_MS;
         long t = nowMillis % SLOT_MS - START_MS;
@@ -38,22 +38,22 @@ public final class IdleBehavior {
         return all[new Random(slot * 0x2545F4914F6CDD1DL).nextInt(all.length)];
     }
 
-    /** Uyanır, kocaman esner, gözlerini kırpıştırır. */
+    /** Wakes up, gives a big yawn, blinks. */
     private static Pose yawn(long t) {
         if (t < 700) return new Pose(0, 0, false, false, 0, Eyes.OPEN);
-        if (t < 2500) return new Pose(1, 0, false, false, 0, Eyes.CLOSED, true, false); // hafif gerinme
+        if (t < 2500) return new Pose(1, 0, false, false, 0, Eyes.CLOSED, true, false); // a little stretch
         if (t < 2800) return new Pose(0, 0, false, false, 0, Eyes.CLOSED);
         return new Pose(0, 0, false, false, 1, Eyes.OPEN);
     }
 
-    /** Patisini yalayıp yüzünü siler. */
+    /** Licks its paw and wipes its face. */
     private static Pose lick(long t) {
         boolean pawAtMouth = (t / 300) % 2 == 0 && t < 3400;
         int head = (t / 600) % 2 == 0 ? 0 : -1;
         return new Pose(0, head, false, false, 0, Eyes.CLOSED, false, pawAtMouth);
     }
 
-    /** Sağa sola bakar, göz kırpar. */
+    /** Looks left and right, blinks. */
     private static Pose lookAround(long t) {
         int phase = (int) (t / 700);
         int head = switch (phase) {
@@ -65,7 +65,7 @@ public final class IdleBehavior {
         return new Pose(0, head, false, false, 0, blink ? Eyes.CLOSED : Eyes.OPEN);
     }
 
-    /** Oturup kuyruğunu sallar. */
+    /** Sits and wags its tail. */
     private static Pose tailWag(long t) {
         int tail = (t / 250) % 2 == 0 ? 0 : 1;
         boolean blink = t % 2000 > 1850;

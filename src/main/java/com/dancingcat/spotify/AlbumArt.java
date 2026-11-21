@@ -16,7 +16,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Albüm kapağını indirip baskın (en canlı ve en yaygın) rengini bulur. */
+/** Downloads the album cover and finds its dominant (most vivid and most common) color. */
 public final class AlbumArt {
 
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
@@ -40,11 +40,11 @@ public final class AlbumArt {
     }
 
     /**
-     * Renkleri 16 seviyeli kutulara ayırır; her piksel, ne kadar canlıysa o kadar çok oy verir.
-     * Çok karanlık / çok beyaz pikseller sayılmaz. En çok oy alan kutunun ortalama rengi döner.
+     * Sorts colors into 16-level buckets; each pixel votes, and more saturated pixels vote more.
+     * Very dark / very white pixels are ignored. Returns the average color of the winning bucket.
      */
     static Color dominant(BufferedImage img) {
-        Map<Integer, double[]> buckets = new HashMap<>(); // anahtar → {oy, r toplamı, g, b, adet}
+        Map<Integer, double[]> buckets = new HashMap<>(); // key -> {votes, r sum, g sum, b sum, count}
         int step = Math.max(1, Math.min(img.getWidth(), img.getHeight()) / 64);
         float[] hsb = new float[3];
         for (int y = 0; y < img.getHeight(); y += step) {
