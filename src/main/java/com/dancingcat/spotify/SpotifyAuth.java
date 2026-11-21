@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
-import java.awt.Desktop;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.BindException;
@@ -30,6 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -54,10 +54,13 @@ public final class SpotifyAuth {
     private final URI redirectUri;
     private final Path tokenFile;
     private final HttpClient http;
+    private final Consumer<String> openBrowser;
     private final ObjectMapper json = new ObjectMapper();
     private Tokens tokens;
 
-    public SpotifyAuth(String clientId, String redirectUri, Path tokenFile, HttpClient http) {
+    public SpotifyAuth(String clientId, String redirectUri, Path tokenFile, HttpClient http,
+                       Consumer<String> openBrowser) {
+        this.openBrowser = openBrowser;
         this.clientId = clientId;
         this.redirectUri = URI.create(redirectUri);
         this.tokenFile = tokenFile;
@@ -143,7 +146,7 @@ public final class SpotifyAuth {
             URI url = URI.create(AUTHORIZE_URL + "?" + form(params));
 
             System.out.println("Opening Spotify login in the browser...");
-            Desktop.getDesktop().browse(url);
+            openBrowser.accept(url.toString());
 
             String authCode = code.get(3, TimeUnit.MINUTES);
             Map<String, String> form = new LinkedHashMap<>();

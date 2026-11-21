@@ -14,10 +14,12 @@ import com.dancingcat.ui.Control;
 import com.dancingcat.ui.Costume;
 import com.dancingcat.ui.Theme;
 
-import javax.swing.SwingUtilities;
+import javafx.application.Platform;
+
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.prefs.Preferences;
 
 /**
@@ -57,7 +59,10 @@ public final class CatController {
     private boolean wasPlaying;
     private int notPlayingStreak;
 
-    public CatController(AppConfig config, Preferences prefs) {
+    /**
+     * @param openBrowser opens a URL in the user's browser (used for the Spotify login)
+     */
+    public CatController(AppConfig config, Preferences prefs, Consumer<String> openBrowser) {
         this.prefs = prefs;
         // Live beat tracking; falls back to the fixed tempo from the config when there is no audio
         this.beat = new BeatTracker(new FixedTempoBeatSource(config.danceBpm()));
@@ -67,11 +72,11 @@ public final class CatController {
         panel.setLyricOffsetMs(lyricOffsetMs());
         panel.setCostume(costume());
         // When a drop is detected (called from the audio thread), do the big move
-        beat.setOnDrop(() -> SwingUtilities.invokeLater(() -> {
+        beat.setOnDrop(() -> Platform.runLater(() -> {
             if (panel.state() == CatState.DANCING) panel.triggerDrop();
         }));
         this.spotify = config.hasSpotifyClientId()
-                ? new SpotifyService(config.spotifyClientId(), config.spotifyRedirectUri(), this::onPlayback)
+                ? new SpotifyService(config.spotifyClientId(), config.spotifyRedirectUri(), openBrowser, this::onPlayback)
                 : null;
         if (spotify == null) {
             System.out.println("No Spotify Client ID set (config.properties). The cat runs in test mode.");
@@ -82,7 +87,7 @@ public final class CatController {
 
     public void start() {
         if (spotify != null) spotify.connectAsync(); // opens the browser login the first time
-        new AudioCapture(Path.of("build/native/audiotap"), beat, status -> SwingUtilities.invokeLater(() -> {
+        new AudioCapture(Path.of("build/native/audiotap"), beat, status -> Platform.runLater(() -> {
             switch (status) {
                 case LISTENING -> System.out.println("🎧 Listening to Spotify's audio – the cat follows the real beat");
                 case PERMISSION_DENIED -> panel.showToast("Audio recording permission needed for live beat");
@@ -139,7 +144,7 @@ public final class CatController {
             return;
         }
         if (save) panel.triggerLike(); // start the animation right away, don't wait for Spotify
-        spotify.setSaved(np.trackId(), save).whenComplete((ok, err) -> SwingUtilities.invokeLater(() -> {
+        spotify.setSaved(np.trackId(), save).whenComplete((ok, err) -> Platform.runLater(() -> {
             if (err != null) {
                 System.err.println("Like failed: " + err.getMessage());
                 panel.showToast(SpotifyService.friendlyError(err));
@@ -205,7 +210,7 @@ public final class CatController {
         };
         result.exceptionally(err -> {
             System.err.println("Command failed: " + err.getMessage());
-            SwingUtilities.invokeLater(() -> panel.showToast(SpotifyService.friendlyError(err)));
+            Platform.runLater(() -> panel.showToast(SpotifyService.friendlyError(err)));
             return null;
         });
     }
@@ -234,7 +239,7 @@ public final class CatController {
 
         if (changed && lyricsEnabled) loadLyrics(np);
         if (changed) onTrackChanged(np);
-        SwingUtilities.invokeLater(() -> {
+        Platform.runLater(() -> {
             panel.setMood(beat.mood());
             if (np != null) panel.setNowPlaying(np);
             panel.setState(playing ? CatState.DANCING : CatState.SLEEPING);
@@ -245,7 +250,7 @@ public final class CatController {
     /** New song: ask Spotify whether it's liked and derive the color theme from the album cover. */
     private void onTrackChanged(NowPlaying track) {
         liked = false;
-        SwingUtilities.invokeLater(() -> panel.setLiked(false));
+        Platform.runLater(() -> panel.setLiked(false));
         if (track.trackId() != null) {
             spotify.isSaved(track.trackId()).whenComplete((saved, err) -> {
                 if (err != null) {
@@ -254,14 +259,14 @@ public final class CatController {
                 }
                 if (isCurrent(track)) {
                     liked = saved;
-                    SwingUtilities.invokeLater(() -> panel.setLiked(saved));
+                    Platform.runLater(() -> panel.setLiked(saved));
                 }
             });
         }
         albumArt.dominantColor(track.albumImageUrl()).thenAccept(color -> {
             if (isCurrent(track)) {
                 Theme theme = color.map(Theme::fromColor).orElse(Theme.DEFAULT);
-                SwingUtilities.invokeLater(() -> panel.setTheme(theme));
+                Platform.runLater(() -> panel.setTheme(theme));
             }
         });
     }
@@ -272,8 +277,8 @@ public final class CatController {
     }
 
     private void loadLyrics(NowPlaying track) {
-        SwingUtilities.invokeLater(() -> panel.setLyrics(null));
-        lyrics.fetch(track).whenComplete((result, err) -> SwingUtilities.invokeLater(() -> {
+        Platform.runLater(() -> panel.setLyrics(null));
+        lyrics.fetch(track).whenComplete((result, err) -> Platform.runLater(() -> {
             if (!isCurrent(track)) return; // the song changed in the meantime
             if (err != null) {
                 System.err.println("Couldn't load lyrics: " + err.getMessage());

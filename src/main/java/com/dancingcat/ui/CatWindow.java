@@ -1,154 +1,202 @@
 package com.dancingcat.ui;
 
 import com.dancingcat.CatController;
+import javafx.animation.AnimationTimer;
+import javafx.application.Platform;
+import javafx.geometry.Rectangle2D;
+import javafx.scene.Cursor;
+import javafx.scene.Scene;
+import javafx.scene.control.CheckMenuItem;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.ToggleGroup;
+import javafx.scene.image.ImageView;
+import javafx.scene.image.PixelFormat;
+import javafx.scene.image.WritableImage;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.Pane;
+import javafx.scene.paint.Color;
+import javafx.stage.Screen;
+import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
-import javax.swing.JCheckBoxMenuItem;
-import javax.swing.ButtonGroup;
-import javax.swing.JMenu;
-import javax.swing.JRadioButtonMenuItem;
-import javax.swing.JMenuItem;
-import javax.swing.JPopupMenu;
-import javax.swing.JWindow;
-import javax.swing.SwingUtilities;
-import java.awt.Color;
-import java.awt.Cursor;
-import java.awt.GraphicsConfiguration;
-import java.awt.GraphicsDevice;
-import java.awt.GraphicsEnvironment;
-import java.awt.Insets;
 import java.awt.Point;
-import java.awt.Rectangle;
-import java.awt.Toolkit;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+import java.util.List;
 import java.util.Optional;
 import java.util.prefs.Preferences;
 
 /**
- * The borderless, transparent, always-on-top and draggable cat window.
+ * The borderless, transparent, always-on-top and draggable cat window (JavaFX).
+ *
+ * CatPanel renders each frame into an image; this window copies it into a JavaFX WritableImage.
+ * (The first version used a Swing JWindow, but on macOS translucent Swing windows occasionally
+ * show a fully cleared frame while being repainted, which made the cat blink.)
  *
  * Positions are always computed from "where the cat is on screen". When the cat gets close to
  * the top of the screen the panel switches to the "flipped" layout (buttons/lyrics below the
- * cat), so the cat can go all the way up without the window bumping into the menu bar.
+ * cat), so the cat can go all the way up.
  */
 public final class CatWindow {
 
     private static final String PREF_X = "windowX";
     private static final String PREF_CAT_Y = "catScreenY";
+    private static final long FRAME_NS = 30_000_000L; // check for changes ~33 times per second
 
-    private final JWindow window = new JWindow();
+    private final Stage stage;
     private final CatPanel panel;
     private final CatController controller;
     private final Preferences prefs;
+    private final ImageView view = new ImageView();
 
-    public CatWindow(CatController controller, Preferences prefs) {
+    private BufferedImage buffer;
+    private WritableImage image;
+    private ContextMenu menu;
+
+    public CatWindow(Stage stage, CatController controller, Preferences prefs) {
+        this.stage = stage;
         this.controller = controller;
         this.panel = controller.panel();
         this.prefs = prefs;
-        window.setAlwaysOnTop(true);
-        window.setBackground(new Color(0, 0, 0, 0));
-        window.getRootPane().putClientProperty("Window.shadow", Boolean.FALSE); // disable the macOS window shadow
-        window.setContentPane(panel);
-        window.pack();
-        restorePosition();
+
+        view.setFitWidth(panel.width());
+        view.setFitHeight(panel.height());
+        view.setSmooth(true);
+        Pane root = new Pane(view);
+        root.setStyle("-fx-background-color: transparent;");
+
+        stage.initStyle(StageStyle.TRANSPARENT);
+        stage.setAlwaysOnTop(true);
+        stage.setResizable(false);
+        stage.setTitle("Dancing Cat");
+        stage.setScene(new Scene(root, panel.width(), panel.height(), Color.TRANSPARENT));
+
         installMouse();
+        restorePosition();
     }
 
-    public void show() { window.setVisible(true); }
+    public void show() {
+        stage.show();
+        new AnimationTimer() {
+            private long last;
 
-    // ---------------------------------------------------------------- konum
+            @Override
+            public void handle(long now) {
+                if (now - last < FRAME_NS) return;
+                last = now;
+                double scale = Math.max(1, stage.getOutputScaleX()); // 2 on Retina screens
+                if (panel.tick() || needsResize(scale)) draw(scale);
+            }
+        }.start();
+    }
+
+    // ---------------------------------------------------------------- drawing
+
+    private boolean needsResize(double scale) {
+        return buffer == null || buffer.getWidth() != pixelSize(panel.width(), scale);
+    }
+
+    private static int pixelSize(int logical, double scale) {
+        return (int) Math.round(logical * scale);
+    }
+
+    /** Renders the cat and copies the pixels into the JavaFX image in one go. */
+    private void draw(double scale) {
+        int w = pixelSize(panel.width(), scale), h = pixelSize(panel.height(), scale);
+        if (buffer == null || buffer.getWidth() != w || buffer.getHeight() != h) {
+            buffer = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
+            image = new WritableImage(w, h);
+            view.setImage(image);
+        }
+        panel.render(buffer, scale);
+        int[] pixels = ((DataBufferInt) buffer.getRaster().getDataBuffer()).getData();
+        image.getPixelWriter().setPixels(0, 0, w, h, PixelFormat.getIntArgbPreInstance(), pixels, 0, w);
+    }
+
+    // ---------------------------------------------------------------- position
 
     private void restorePosition() {
-        Rectangle screen = usableBounds(new Point(0, 0));
-        int defaultX = screen.x + screen.width - window.getWidth() - 20;
-        int defaultCatY = screen.y + screen.height - panel.catPixelSize() - 10;
-        placeCat(prefs.getInt(PREF_X, defaultX), prefs.getInt(PREF_CAT_Y, defaultCatY));
+        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+        double defaultX = screen.getMaxX() - panel.width() - 20;
+        double defaultCatY = screen.getMaxY() - panel.catPixelSize() - 10;
+        placeCat(prefs.getDouble(PREF_X, defaultX), prefs.getDouble(PREF_CAT_Y, defaultCatY));
     }
 
-    private int catScreenY() {
-        return window.getY() + panel.catBounds().y;
+    private double catScreenY() {
+        return stage.getY() + panel.catBounds().y;
     }
 
     /** Places the cat at (window x, top edge of the cat) on screen. */
-    private void placeCat(int windowX, int catY) {
-        Rectangle screen = usableBounds(new Point(windowX + window.getWidth() / 2, catY));
+    private void placeCat(double windowX, double catY) {
+        Rectangle2D screen = usableBounds(windowX + panel.width() / 2.0, catY);
+        int catPx = panel.catPixelSize();
         // keep the cat on screen
-        catY = Math.max(screen.y, Math.min(catY, screen.y + screen.height - panel.catPixelSize() / 2));
-        int minX = screen.x - (window.getWidth() - panel.catPixelSize()) / 2;
-        int maxX = screen.x + screen.width - (window.getWidth() + panel.catPixelSize()) / 2;
+        catY = Math.max(screen.getMinY(), Math.min(catY, screen.getMaxY() - catPx / 2.0));
+        double minX = screen.getMinX() - (panel.width() - catPx) / 2.0;
+        double maxX = screen.getMaxX() - (panel.width() + catPx) / 2.0;
         windowX = Math.max(minX, Math.min(windowX, maxX));
 
-        boolean flip = catY - panel.overlayHeight() < screen.y; // no room above -> buttons go below
+        boolean flip = catY - panel.overlayHeight() < screen.getMinY(); // no room above -> buttons go below
         panel.setFlipped(flip);
-        window.setLocation(windowX, flip ? catY : catY - panel.overlayHeight());
+        stage.setX(windowX);
+        stage.setY(flip ? catY : catY - panel.overlayHeight());
     }
 
     /** The area of the screen containing the point, excluding the menu bar / Dock. */
-    private static Rectangle usableBounds(Point p) {
-        for (GraphicsDevice device : GraphicsEnvironment.getLocalGraphicsEnvironment().getScreenDevices()) {
-            GraphicsConfiguration gc = device.getDefaultConfiguration();
-            Rectangle b = gc.getBounds();
-            if (b.contains(p)) {
-                Insets in = Toolkit.getDefaultToolkit().getScreenInsets(gc);
-                return new Rectangle(b.x + in.left, b.y + in.top,
-                        b.width - in.left - in.right, b.height - in.top - in.bottom);
-            }
-        }
-        return GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+    private static Rectangle2D usableBounds(double x, double y) {
+        List<Screen> screens = Screen.getScreensForRectangle(x, y, 1, 1);
+        return (screens.isEmpty() ? Screen.getPrimary() : screens.get(0)).getVisualBounds();
     }
 
     private void savePosition() {
-        prefs.putInt(PREF_X, window.getX());
-        prefs.putInt(PREF_CAT_Y, catScreenY());
+        prefs.putDouble(PREF_X, stage.getX());
+        prefs.putDouble(PREF_CAT_Y, catScreenY());
     }
 
-    // ---------------------------------------------------------------- fare
+    // ---------------------------------------------------------------- mouse
 
     private void installMouse() {
-        MouseAdapter mouse = new MouseAdapter() {
-            private Point pressOnScreen;
-            private int windowXAtPress;
-            private int catYAtPress;
-            private boolean dragged;
+        double[] press = new double[4]; // screenX, screenY, windowX, catY at press
+        boolean[] dragged = {false};
 
-            @Override public void mousePressed(MouseEvent e) {
-                if (e.isPopupTrigger()) { showMenu(e); return; }
-                pressOnScreen = e.getLocationOnScreen();
-                windowXAtPress = window.getX();
-                catYAtPress = catScreenY();
-                dragged = false;
+        view.setOnMousePressed(e -> {
+            if (menu != null) menu.hide();
+            press[0] = e.getScreenX();
+            press[1] = e.getScreenY();
+            press[2] = stage.getX();
+            press[3] = catScreenY();
+            dragged[0] = false;
+        });
+        view.setOnMouseDragged(e -> {
+            if (e.getButton() != MouseButton.PRIMARY) return;
+            double dx = e.getScreenX() - press[0], dy = e.getScreenY() - press[1];
+            if (Math.abs(dx) + Math.abs(dy) > 3) dragged[0] = true;
+            if (dragged[0]) placeCat(press[2] + dx, press[3] + dy);
+        });
+        view.setOnMouseReleased(e -> {
+            if (dragged[0]) {
+                savePosition();
+            } else if (e.getButton() == MouseButton.PRIMARY && !e.isControlDown()) {
+                if (e.getClickCount() == 2) onDoubleClick(point(e));
+                else onClick(point(e));
             }
+        });
+        view.setOnMouseMoved(e -> {
+            Control c = panel.controlAt(point(e)).orElse(null);
+            panel.setHover(c);
+            view.setCursor(c != null ? Cursor.HAND : Cursor.DEFAULT);
+        });
+        view.setOnMouseExited(e -> panel.setHover(null));
+        view.setOnContextMenuRequested(e -> showMenu(e.getScreenX(), e.getScreenY()));
+    }
 
-            @Override public void mouseDragged(MouseEvent e) {
-                if (pressOnScreen == null) return;
-                int dx = e.getXOnScreen() - pressOnScreen.x;
-                int dy = e.getYOnScreen() - pressOnScreen.y;
-                if (Math.abs(dx) + Math.abs(dy) > 3) dragged = true;
-                if (dragged) placeCat(windowXAtPress + dx, catYAtPress + dy);
-            }
-
-            @Override public void mouseReleased(MouseEvent e) {
-                if (e.isPopupTrigger()) { showMenu(e); return; }
-                if (dragged) savePosition();
-                else if (SwingUtilities.isLeftMouseButton(e)) {
-                    if (e.getClickCount() == 2) onDoubleClick(e.getPoint());
-                    else onClick(e.getPoint());
-                }
-                pressOnScreen = null;
-            }
-
-            @Override public void mouseMoved(MouseEvent e) {
-                Control c = panel.controlAt(e.getPoint()).orElse(null);
-                panel.setHover(c);
-                panel.setCursor(Cursor.getPredefinedCursor(c != null ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
-            }
-
-            @Override public void mouseExited(MouseEvent e) {
-                panel.setHover(null);
-            }
-        };
-        panel.addMouseListener(mouse);
-        panel.addMouseMotionListener(mouse);
+    private static Point point(MouseEvent e) {
+        return new Point((int) e.getX(), (int) e.getY());
     }
 
     /** Left click: on a button, send its command; on the cat, show/hide the buttons. */
@@ -177,48 +225,57 @@ public final class CatWindow {
         controller.likeByDoubleClick();
     }
 
-    /** Right-click menu. */
-    private void showMenu(MouseEvent e) {
-        JPopupMenu menu = new JPopupMenu();
+    // ---------------------------------------------------------------- right-click menu
+
+    private void showMenu(double screenX, double screenY) {
+        if (menu != null) menu.hide();
+        menu = new ContextMenu();
         boolean connected = controller.isSpotifyConnected();
+
         if (controller.hasSpotify() && !connected) {
-            JMenuItem connect = new JMenuItem("Connect to Spotify");
-            connect.addActionListener(a -> controller.connectSpotify());
-            menu.add(connect);
+            MenuItem connect = new MenuItem("Connect to Spotify");
+            connect.setOnAction(a -> controller.connectSpotify());
+            menu.getItems().add(connect);
         }
-        JCheckBoxMenuItem lyrics = new JCheckBoxMenuItem("Show lyrics", controller.lyricsEnabled());
-        lyrics.addActionListener(a -> controller.setLyricsEnabled(lyrics.isSelected()));
-        menu.add(lyrics);
-        JMenu timing = new JMenu("Lyric timing");
-        JMenuItem earlier = new JMenuItem("Lyrics are late → show 0.1 s earlier");
-        earlier.addActionListener(a -> controller.nudgeLyricOffset(100));
-        JMenuItem later = new JMenuItem("Lyrics are early → show 0.1 s later");
-        later.addActionListener(a -> controller.nudgeLyricOffset(-100));
-        timing.add(earlier);
-        timing.add(later);
-        menu.add(timing);
-        JMenu costumes = new JMenu("Costume");
-        ButtonGroup group = new ButtonGroup();
+
+        CheckMenuItem lyrics = new CheckMenuItem("Show lyrics");
+        lyrics.setSelected(controller.lyricsEnabled());
+        lyrics.setOnAction(a -> controller.setLyricsEnabled(lyrics.isSelected()));
+
+        Menu timing = new Menu("Lyric timing");
+        MenuItem earlier = new MenuItem("Lyrics are late → show 0.1 s earlier");
+        earlier.setOnAction(a -> controller.nudgeLyricOffset(100));
+        MenuItem later = new MenuItem("Lyrics are early → show 0.1 s later");
+        later.setOnAction(a -> controller.nudgeLyricOffset(-100));
+        timing.getItems().addAll(earlier, later);
+
+        Menu costumes = new Menu("Costume");
+        ToggleGroup group = new ToggleGroup();
         for (Costume c : Costume.values()) {
-            JRadioButtonMenuItem item = new JRadioButtonMenuItem(c.label(), c == controller.costume());
-            item.addActionListener(a -> controller.setCostume(c));
-            group.add(item);
-            costumes.add(item);
+            RadioMenuItem item = new RadioMenuItem(c.label());
+            item.setToggleGroup(group);
+            item.setSelected(c == controller.costume());
+            item.setOnAction(a -> controller.setCostume(c));
+            costumes.getItems().add(item);
         }
-        menu.add(costumes);
-        JMenuItem tempo = new JMenuItem(controller.tempoLabel());
-        tempo.setEnabled(false);
-        menu.add(tempo);
-        if (!connected) { // Spotify yokken dans/uyku elle denenebilsin
+
+        MenuItem tempo = new MenuItem(controller.tempoLabel());
+        tempo.setDisable(true);
+        menu.getItems().addAll(lyrics, timing, costumes, tempo);
+
+        if (!connected) { // without Spotify, dancing/sleeping can be tried by hand
             boolean sleeping = panel.state() == CatState.SLEEPING;
-            JMenuItem toggle = new JMenuItem(sleeping ? "Dans et (test)" : "Uyu (test)");
-            toggle.addActionListener(a -> panel.setState(sleeping ? CatState.DANCING : CatState.SLEEPING));
-            menu.add(toggle);
+            MenuItem toggle = new MenuItem(sleeping ? "Dance (test)" : "Sleep (test)");
+            toggle.setOnAction(a -> panel.setState(sleeping ? CatState.DANCING : CatState.SLEEPING));
+            menu.getItems().add(toggle);
         }
-        menu.addSeparator();
-        JMenuItem quit = new JMenuItem("Quit");
-        quit.addActionListener(a -> System.exit(0));
-        menu.add(quit);
-        menu.show(panel, e.getX(), e.getY());
+
+        MenuItem quit = new MenuItem("Quit");
+        quit.setOnAction(a -> {
+            Platform.exit();
+            System.exit(0);
+        });
+        menu.getItems().addAll(new SeparatorMenuItem(), quit);
+        menu.show(view, screenX, screenY);
     }
 }

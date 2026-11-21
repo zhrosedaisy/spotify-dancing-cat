@@ -1,5 +1,7 @@
 plugins {
     application
+    // JavaFX draws the transparent cat window (smooth, GPU-backed; Swing flickered on macOS)
+    id("org.openjfx.javafxplugin") version "0.1.0"
 }
 
 group = "com.dancingcat"
@@ -14,15 +16,20 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind:2.19.0")
 }
 
-// Runs on JDK 21 or newer.
+javafx {
+    version = "25.0.5"
+    modules = listOf("javafx.controls")
+}
+
+// Runs on JDK 25 or newer.
 tasks.withType<JavaCompile> {
-    options.release = 21
+    options.release = 25
     options.encoding = "UTF-8"
 }
 
 application {
     mainClass = "com.dancingcat.Main"
-    applicationDefaultJvmArgs = listOf("-Dapple.awt.application.name=Dancing Cat")
+    applicationDefaultJvmArgs = listOf("-Djava.awt.headless=true", "--enable-native-access=javafx.graphics")
 }
 
 // On macOS, build the small Swift helper that captures Spotify's audio (build/native/audiotap).

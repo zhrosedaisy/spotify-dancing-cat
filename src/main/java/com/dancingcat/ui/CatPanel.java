@@ -8,14 +8,10 @@ import com.dancingcat.spotify.PlaybackClock;
 import com.dancingcat.ui.CatSprites.Eyes;
 import com.dancingcat.ui.CatSprites.Pose;
 
-import javax.swing.JPanel;
-import javax.swing.Timer;
 import java.awt.AlphaComposite;
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
-import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.Polygon;
@@ -31,17 +27,16 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Draws the cat, the control buttons, the song-title bubble and the lyrics.
- *
- * Two rules keep the transparent window flicker-free:
- *  1. Each frame is rendered into an off-screen image (canvas) first, then copied to the window in one go.
- *  2. We only repaint when the picture actually changes (Scene comparison).
+ * Renders the cat, the control buttons, the song-title bubble and the lyrics into an image.
+ * It knows nothing about windows: CatWindow calls {@link #tick()} every frame and, when it
+ * returns true, {@link #render} to get a fresh picture (we only redraw when something changed).
+ * All methods are meant to be called on the JavaFX application thread.
  *
  * Layout: normally the cat sits at the bottom with buttons/lyrics above it. When the cat is
  * dragged to the top of the screen ("flipped"), the cat moves up and buttons/lyrics are drawn
  * below it, so the cat can sit right under the menu bar.
  */
-public final class CatPanel extends JPanel {
+public final class CatPanel {
 
     private static final long REACTION_MS = 700;
     private static final int REACTION_STEPS = 14;
@@ -87,8 +82,9 @@ public final class CatPanel extends JPanel {
     private Theme paintTheme = Theme.DEFAULT; // theme used while painting (in-between during a transition)
     private final PlaybackClock clock = new PlaybackClock();
 
+    private final int width;
+    private final int height;
     private Scene scene;
-    private BufferedImage canvas;
 
     /** Extra motion for a dance frame (offset, rotation, mirroring). */
     private record Fx(int dx, int dy, int rotStep, boolean mirror) {
@@ -117,12 +113,15 @@ public final class CatPanel extends JPanel {
         this.catPx = CatSprites.SIZE * scale;
         this.buttonPx = 10 * scale;
         this.overlayPx = 44 * scale;
-        setOpaque(false);
-        setDoubleBuffered(true);
-        setPreferredSize(new Dimension(Math.max(320, catPx + 200), catPx + overlayPx));
+        this.width = Math.max(320, catPx + 200);
+        this.height = catPx + overlayPx;
         scene = sceneAt(System.currentTimeMillis());
-        new Timer(30, e -> tick()).start();
     }
+
+    /** Size of the rendered picture in logical (point) pixels. */
+    public int width() { return width; }
+
+    public int height() { return height; }
 
     // ---------------------------------------------------------------- state
 
@@ -186,10 +185,7 @@ public final class CatPanel extends JPanel {
 
     /** True when the cat is near the top: buttons/lyrics are drawn below it. */
     public void setFlipped(boolean flipped) {
-        if (this.flipped != flipped) {
-            this.flipped = flipped;
-            tick();
-        }
+        this.flipped = flipped;
     }
 
     /** Height of the area reserved for buttons/lyrics. */
@@ -210,8 +206,8 @@ public final class CatPanel extends JPanel {
     // ---------------------------------------------------------------- layout
 
     private Layout currentLayout() {
-        int w = getWidth() > 0 ? getWidth() : getPreferredSize().width;
-        int h = getHeight() > 0 ? getHeight() : getPreferredSize().height;
+        int w = width;
+        int h = height;
         int catX = (w - catPx) / 2;
         int toastH = 7 * scale;
         if (!flipped) {
@@ -244,12 +240,12 @@ public final class CatPanel extends JPanel {
 
     // ---------------------------------------------------------------- scene
 
-    private void tick() {
+    /** Advances the animation. Returns true if the picture changed and needs to be rendered. */
+    public boolean tick() {
         Scene next = sceneAt(System.currentTimeMillis());
-        if (!next.equals(scene)) {
-            scene = next;
-            repaint();
-        }
+        if (next.equals(scene)) return false;
+        scene = next;
+        return true;
     }
 
     private Scene sceneAt(long now) {
@@ -346,26 +342,17 @@ public final class CatPanel extends JPanel {
 
     // ---------------------------------------------------------------- painting
 
-    @Override
-    protected void paintComponent(Graphics g) {
-        int w = getWidth(), h = getHeight();
-        if (w <= 0 || h <= 0) return;
-        if (canvas == null || canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        }
-        renderScene(scene, canvas);
-
-        Graphics2D g2 = (Graphics2D) g.create();
-        g2.setComposite(AlphaComposite.Src); // replace all pixels in one go
-        g2.drawImage(canvas, 0, 0, null);
-        g2.dispose();
-    }
-
-    private void renderScene(Scene s, BufferedImage target) {
+    /**
+     * Renders the current scene into target, whose size must be (width × pixelScale,
+     * height × pixelScale). pixelScale is 2 on Retina screens, so text stays crisp.
+     */
+    public void render(BufferedImage target, double pixelScale) {
+        Scene s = scene;
         Graphics2D g2 = target.createGraphics();
         g2.setComposite(AlphaComposite.Clear);
         g2.fillRect(0, 0, target.getWidth(), target.getHeight());
         g2.setComposite(AlphaComposite.SrcOver);
+        g2.scale(pixelScale, pixelScale);
         g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 
         Layout l = currentLayout();
@@ -438,7 +425,7 @@ public final class CatPanel extends JPanel {
         FontMetrics fmCur = g2.getFontMetrics(curFont);
         FontMetrics fmNext = g2.getFontMetrics(nextFont);
         int pad = 2 * scale;
-        int maxTextW = getWidth() - 2 * pad - 6;
+        int maxTextW = width - 2 * pad - 6;
 
         // During a transition: old block (previous line + its preview) -> new block. The bubble resizes smoothly.
         double a = smooth(lf.step() / (double) LYRIC_ANIM_STEPS);
@@ -447,13 +434,13 @@ public final class CatPanel extends JPanel {
                 : layoutBlock(lf.previous(), lf.current(), fmCur, fmNext, maxTextW, pad, l.lyricsMaxH());
         int w = prev == null ? cur.w() : (int) Math.round(prev.w() + (cur.w() - prev.w()) * a);
         int h = prev == null ? cur.h() : (int) Math.round(prev.h() + (cur.h() - prev.h()) * a);
-        int x = (getWidth() - w) / 2;
+        int x = (width - w) / 2;
         int y = l.lyricsGrowUp() ? l.lyricsAnchorY() - h : l.lyricsAnchorY();
 
         // Bubble + a small tail pointing at the cat
         g2.setColor(paintTheme.bubble());
         g2.fillRoundRect(x, y, w, h, 4 * scale, 4 * scale);
-        int cx = getWidth() / 2, t = 2 * scale;
+        int cx = width / 2, t = 2 * scale;
         Polygon tail = l.lyricsGrowUp()
                 ? new Polygon(new int[]{cx - t, cx + t, cx}, new int[]{y + h, y + h, y + h + t}, 3)
                 : new Polygon(new int[]{cx - t, cx + t, cx}, new int[]{y, y, y - t}, 3);
@@ -527,10 +514,10 @@ public final class CatPanel extends JPanel {
         g2.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 4 * scale));
         FontMetrics fm = g2.getFontMetrics();
         int pad = 2 * scale;
-        String shown = ellipsize(text, fm, getWidth() - 4 * pad);
+        String shown = ellipsize(text, fm, width - 4 * pad);
         int w = fm.stringWidth(shown) + 2 * pad;
         int h = fm.getHeight() + pad;
-        int x = (getWidth() - w) / 2;
+        int x = (width - w) / 2;
         int y = l.toastY();
         g2.setComposite(AlphaComposite.SrcOver.derive(Math.max(0f, alpha)));
         g2.setColor(paintTheme.bubble());

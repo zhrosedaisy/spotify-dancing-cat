@@ -7,7 +7,7 @@ Click it to control playback, turn on synced lyrics, dress it up, and watch it f
   <img src="docs/demo.gif" alt="The cat dancing with headphones, doing a flip, with synced lyrics and playback controls" width="480">
 </p>
 
-> Built with **Java 21 + Swing**, the **Spotify Web API**, **LRCLIB** for lyrics, and a tiny **Swift / ScreenCaptureKit** helper for live beat detection on macOS.
+> Built with **Java 25 + JavaFX**, the **Spotify Web API**, **LRCLIB** for lyrics, and a tiny **Swift / ScreenCaptureKit** helper for live beat detection on macOS.
 
 ---
 
@@ -62,7 +62,7 @@ Click it to control playback, turn on synced lyrics, dress it up, and watch it f
 | | |
 |---|---|
 | **OS** | macOS 14 or newer (live beat detection uses ScreenCaptureKit). Other platforms run with a fixed-tempo fallback. |
-| **Java** | JDK 21 or newer |
+| **Java** | JDK 25 or newer (JavaFX is downloaded automatically by Gradle) |
 | **Swift** | Xcode Command Line Tools (`xcode-select --install`) – used to build the small audio helper |
 | **Spotify** | A **Spotify Premium** account (required by Spotify for playback control and for Development Mode apps) |
 
@@ -143,7 +143,7 @@ flowchart LR
 
 - **Beat tracking:** audio is split into 10 ms frames; a spectral-flux onset curve (with extra weight on the kick-drum range) is autocorrelated to find the tempo, then a comb filter finds where the beats fall. The cat's beat counter is nudged toward the estimate gradually and never runs backwards, so the dance never stutters.
 - **Lyrics sync:** Spotify reports the playback position about once a second. A smoothed playback clock interpolates between reports, compensates for network latency and never jumps back, so lines don't flicker at boundaries.
-- **Rendering:** each frame is drawn off-screen and blitted in one go, and only repainted when something actually changes – this keeps the transparent window flicker-free.
+- **Rendering:** each frame is drawn off-screen with Java2D (at 2× on Retina screens) and handed to a transparent JavaFX window in one go, only when something actually changes. An earlier Swing version occasionally showed an empty frame on macOS; JavaFX's GPU-backed window doesn't.
 - **Sprites:** all pixel art (cat, costumes, icons, notes) is defined as small character grids in code – no image assets needed.
 
 ---

@@ -37,9 +37,10 @@ public final class SpotifyService {
     private Boolean lastPlaying;
     private String lastError;
 
-    public SpotifyService(String clientId, String redirectUri, Consumer<Optional<NowPlaying>> listener) {
+    public SpotifyService(String clientId, String redirectUri, Consumer<String> openBrowser,
+                          Consumer<Optional<NowPlaying>> listener) {
         HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-        this.auth = new SpotifyAuth(clientId, redirectUri, Path.of("tokens.json"), http);
+        this.auth = new SpotifyAuth(clientId, redirectUri, Path.of("tokens.json"), http, openBrowser);
         this.client = new SpotifyClient(auth, http);
         this.listener = listener;
     }

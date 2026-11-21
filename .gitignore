@@ -31,3 +31,7 @@ bin/
 hs_err_pid*.log
 *.tmp
 *.swp
+
+# --- Screen recordings / media dropped into the project ---
+*.mov
+*.mp4
