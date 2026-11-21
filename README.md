@@ -101,6 +101,15 @@ On first launch:
 
 Without the audio permission the cat still works – it just dances at a fixed tempo.
 
+### 4. Install it as a Mac app (optional)
+```bash
+./gradlew installApp
+```
+This builds **Dancing Cat.app** (with its own Java runtime, so Java isn't needed to run it) and installs it to `~/Applications`.
+Your `config.properties` and `tokens.json` are copied to `~/Library/Application Support/Dancing Cat`, which is where the app reads them from.
+Drag the app to your Dock or Desktop and start the cat with a double-click.
+The first time, macOS asks again for *Screen & System Audio Recording* permission – this time for "Dancing Cat".
+
 ---
 
 ## 🖱️ Controls
@@ -162,6 +171,9 @@ src/main/java/com/dancingcat/
 native/
 ├── AudioTap.swift            # captures Spotify's audio via ScreenCaptureKit, writes PCM to stdout
 └── build.sh                  # builds the helper (called automatically by Gradle)
+packaging/
+├── DancingCat.icns           # app icon (made from the cat's own sprites)
+└── MakeIcon.java             # regenerates the icon
 ```
 
 ---

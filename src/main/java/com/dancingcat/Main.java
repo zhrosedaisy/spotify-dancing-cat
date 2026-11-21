@@ -1,11 +1,11 @@
 package com.dancingcat;
 
 import com.dancingcat.config.AppConfig;
+import com.dancingcat.config.AppPaths;
 import com.dancingcat.ui.CatWindow;
 import javafx.application.Application;
 import javafx.stage.Stage;
 
-import java.nio.file.Path;
 import java.util.prefs.Preferences;
 
 /**
@@ -22,7 +22,7 @@ public final class Main {
     public static final class App extends Application {
         @Override
         public void start(Stage stage) {
-            AppConfig config = AppConfig.load(Path.of("config.properties"));
+            AppConfig config = AppConfig.load(AppPaths.configFile());
             // User preferences (cat position, lyrics on/off, ...) are stored under ~/Library/Preferences on macOS
             Preferences prefs = Preferences.userNodeForPackage(Main.class);
 

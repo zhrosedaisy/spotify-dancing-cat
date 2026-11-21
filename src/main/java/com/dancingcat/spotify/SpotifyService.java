@@ -1,8 +1,9 @@
 package com.dancingcat.spotify;
 
+import com.dancingcat.config.AppPaths;
+
 import java.io.IOException;
 import java.net.http.HttpClient;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,7 +41,7 @@ public final class SpotifyService {
     public SpotifyService(String clientId, String redirectUri, Consumer<String> openBrowser,
                           Consumer<Optional<NowPlaying>> listener) {
         HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-        this.auth = new SpotifyAuth(clientId, redirectUri, Path.of("tokens.json"), http, openBrowser);
+        this.auth = new SpotifyAuth(clientId, redirectUri, AppPaths.tokenFile(), http, openBrowser);
         this.client = new SpotifyClient(auth, http);
         this.listener = listener;
     }

@@ -4,6 +4,7 @@ import com.dancingcat.beat.AudioCapture;
 import com.dancingcat.beat.BeatTracker;
 import com.dancingcat.beat.FixedTempoBeatSource;
 import com.dancingcat.config.AppConfig;
+import com.dancingcat.config.AppPaths;
 import com.dancingcat.lyrics.LyricsService;
 import com.dancingcat.spotify.AlbumArt;
 import com.dancingcat.spotify.NowPlaying;
@@ -16,7 +17,6 @@ import com.dancingcat.ui.Theme;
 
 import javafx.application.Platform;
 
-import java.nio.file.Path;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -87,7 +87,7 @@ public final class CatController {
 
     public void start() {
         if (spotify != null) spotify.connectAsync(); // opens the browser login the first time
-        new AudioCapture(Path.of("build/native/audiotap"), beat, status -> Platform.runLater(() -> {
+        new AudioCapture(AppPaths.audioTap(), beat, status -> Platform.runLater(() -> {
             switch (status) {
                 case LISTENING -> System.out.println("🎧 Listening to Spotify's audio – the cat follows the real beat");
                 case PERMISSION_DENIED -> panel.showToast("Audio recording permission needed for live beat");

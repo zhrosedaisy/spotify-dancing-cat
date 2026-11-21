@@ -35,3 +35,6 @@ hs_err_pid*.log
 # --- Screen recordings / media dropped into the project ---
 *.mov
 *.mp4
+
+# --- Intermediate icon files (DancingCat.icns is generated from these) ---
+packaging/*.iconset/
