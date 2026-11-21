@@ -1,9 +1,33 @@
+# --- Kişisel ayarlar ve gizli bilgiler: ASLA repoya girmesin ---
+# (Not: .gitignore'da yorum ayrı satırda olmalı, desenin yanına yazılamaz)
+# Spotify Client ID
+config.properties
+# Spotify giriş token'ları
+tokens.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# --- Derleme çıktıları (Gradle, Swift yardımcısı) ---
 .gradle/
 build/
+out/
+bin/
+*.class
+.kotlin/
+
+# --- IDE / editör ---
 .idea/
 *.iml
-out/
+*.ipr
+*.iws
+.vscode/
+
+# --- İşletim sistemi ve geçici dosyalar ---
 .DS_Store
-# Kişisel ayarlar (Client ID, token'lar) repoya girmesin
-config.properties
-tokens.json
+*.log
+hs_err_pid*.log
+*.tmp
+*.swp
